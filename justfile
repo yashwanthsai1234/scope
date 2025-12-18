@@ -34,3 +34,10 @@ top:
 clean:
     rm -rf dist/ build/ *.egg-info .pytest_cache .ruff_cache
     find . -type d -name __pycache__ -exec rm -rf {} +
+
+# Kill all scope tmux sessions and remove .scope directory
+nuke:
+    #!/usr/bin/env bash
+    tmux list-sessions -F '#{session_name}' 2>/dev/null | grep '^scope-' | xargs -I {} tmux kill-session -t {} 2>/dev/null || true
+    rm -rf .scope
+    echo "Killed all scope sessions and removed .scope/"

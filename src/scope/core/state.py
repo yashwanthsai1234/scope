@@ -1,0 +1,112 @@
+"""State management for scope sessions.
+
+All session data is stored in .scope/sessions/{id}/ with individual files:
+- task: One-line task description
+- state: Current state (running, done, aborted)
+- parent: Parent session ID (empty for root)
+- tmux: tmux session name
+- created_at: ISO format timestamp
+"""
+
+from pathlib import Path
+
+from scope.core.session import Session
+
+
+def ensure_scope_dir() -> Path:
+    """Ensure .scope directory exists in current working directory.
+
+    Creates .scope/ and .scope/sessions/ if they don't exist.
+
+    Returns:
+        Path to .scope directory.
+    """
+    scope_dir = Path.cwd() / ".scope"
+    sessions_dir = scope_dir / "sessions"
+    sessions_dir.mkdir(parents=True, exist_ok=True)
+    return scope_dir
+
+
+def _get_next_id_path(scope_dir: Path) -> Path:
+    """Get path to next_id counter file."""
+    return scope_dir / "next_id"
+
+
+def _get_session_dir(scope_dir: Path, session_id: str) -> Path:
+    """Get path to session directory."""
+    return scope_dir / "sessions" / session_id
+
+
+def next_id(parent: str = "") -> str:
+    """Get the next available session ID.
+
+    ID format:
+    - Root sessions: "0", "1", "2", ...
+    - Child sessions: "{parent}.0", "{parent}.1", ...
+
+    Args:
+        parent: Parent session ID. Empty string for root sessions.
+
+    Returns:
+        The next available session ID.
+    """
+    scope_dir = ensure_scope_dir()
+
+    if parent:
+        # Child session: find next child index for this parent
+        sessions_dir = scope_dir / "sessions"
+        prefix = f"{parent}."
+        max_child = -1
+
+        if sessions_dir.exists():
+            for session_dir in sessions_dir.iterdir():
+                if session_dir.is_dir() and session_dir.name.startswith(prefix):
+                    # Extract child index: "0.1.2" with parent "0.1" -> "2"
+                    suffix = session_dir.name[len(prefix) :]
+                    # Only consider direct children (no dots in suffix)
+                    if "." not in suffix:
+                        try:
+                            child_idx = int(suffix)
+                            max_child = max(max_child, child_idx)
+                        except ValueError:
+                            pass
+
+        return f"{parent}.{max_child + 1}"
+    else:
+        # Root session: use global counter
+        next_id_path = _get_next_id_path(scope_dir)
+
+        if next_id_path.exists():
+            current = int(next_id_path.read_text().strip())
+        else:
+            current = 0
+
+        # Increment and save
+        next_id_path.write_text(str(current + 1))
+
+        return str(current)
+
+
+def save_session(session: Session) -> None:
+    """Save session to filesystem.
+
+    Creates .scope/sessions/{id}/ directory with individual files:
+    - task: Task description
+    - state: Current state
+    - parent: Parent ID (may be empty)
+    - tmux: tmux session name
+    - created_at: ISO format timestamp
+
+    Args:
+        session: Session to save.
+    """
+    scope_dir = ensure_scope_dir()
+    session_dir = _get_session_dir(scope_dir, session.id)
+    session_dir.mkdir(parents=True, exist_ok=True)
+
+    # Write individual files
+    (session_dir / "task").write_text(session.task)
+    (session_dir / "state").write_text(session.state)
+    (session_dir / "parent").write_text(session.parent)
+    (session_dir / "tmux").write_text(session.tmux_session)
+    (session_dir / "created_at").write_text(session.created_at.isoformat())
