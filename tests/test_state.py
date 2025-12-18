@@ -3,7 +3,7 @@
 from datetime import datetime, timezone
 
 from scope.core.session import Session
-from scope.core.state import ensure_scope_dir, next_id, save_session
+from scope.core.state import ensure_scope_dir, load_session, next_id, save_session
 
 
 def test_ensure_scope_dir(tmp_path, monkeypatch):
@@ -119,3 +119,58 @@ def test_save_session_with_parent(tmp_path, monkeypatch):
 
     session_dir = tmp_path / ".scope" / "sessions" / "0.1"
     assert (session_dir / "parent").read_text() == "0"
+
+
+def test_load_session(tmp_path, monkeypatch):
+    """Test load_session reads session from disk."""
+    monkeypatch.chdir(tmp_path)
+
+    created = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    session = Session(
+        id="0",
+        task="Test task",
+        parent="",
+        state="running",
+        tmux_session="scope-0",
+        created_at=created,
+    )
+    save_session(session)
+
+    loaded = load_session("0")
+
+    assert loaded is not None
+    assert loaded.id == "0"
+    assert loaded.task == "Test task"
+    assert loaded.parent == ""
+    assert loaded.state == "running"
+    assert loaded.tmux_session == "scope-0"
+    assert loaded.created_at == created
+
+
+def test_load_session_not_found(tmp_path, monkeypatch):
+    """Test load_session returns None for non-existent session."""
+    monkeypatch.chdir(tmp_path)
+
+    loaded = load_session("999")
+
+    assert loaded is None
+
+
+def test_load_session_with_parent(tmp_path, monkeypatch):
+    """Test load_session correctly loads parent field."""
+    monkeypatch.chdir(tmp_path)
+
+    session = Session(
+        id="0.1",
+        task="Child task",
+        parent="0",
+        state="running",
+        tmux_session="scope-0.1",
+        created_at=datetime.now(timezone.utc),
+    )
+    save_session(session)
+
+    loaded = load_session("0.1")
+
+    assert loaded is not None
+    assert loaded.parent == "0"

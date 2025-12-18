@@ -8,6 +8,7 @@ Usage:
 
 import click
 
+from scope.commands.poll import poll
 from scope.commands.spawn import spawn
 
 
@@ -24,3 +25,4 @@ def main() -> None:
 
 # Register commands
 main.add_command(spawn)
+main.add_command(poll)

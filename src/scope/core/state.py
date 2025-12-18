@@ -8,6 +8,7 @@ All session data is stored in .scope/sessions/{id}/ with individual files:
 - created_at: ISO format timestamp
 """
 
+from datetime import datetime
 from pathlib import Path
 
 from scope.core.session import Session
@@ -110,3 +111,28 @@ def save_session(session: Session) -> None:
     (session_dir / "parent").write_text(session.parent)
     (session_dir / "tmux").write_text(session.tmux_session)
     (session_dir / "created_at").write_text(session.created_at.isoformat())
+
+
+def load_session(session_id: str) -> Session | None:
+    """Load a session by ID.
+
+    Args:
+        session_id: The session ID to load.
+
+    Returns:
+        Session object if found, None if session directory doesn't exist.
+    """
+    scope_dir = Path.cwd() / ".scope"
+    session_dir = _get_session_dir(scope_dir, session_id)
+
+    if not session_dir.exists():
+        return None
+
+    return Session(
+        id=session_id,
+        task=(session_dir / "task").read_text(),
+        parent=(session_dir / "parent").read_text(),
+        state=(session_dir / "state").read_text(),
+        tmux_session=(session_dir / "tmux").read_text(),
+        created_at=datetime.fromisoformat((session_dir / "created_at").read_text()),
+    )
