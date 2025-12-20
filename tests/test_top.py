@@ -170,8 +170,8 @@ async def test_new_session_outside_tmux_shows_notification(setup_scope_dir):
     """Test that pressing n outside tmux shows error notification."""
     app = ScopeApp()
     async with app.run_test() as pilot:
-        # Mock get_current_session to return None (not in tmux)
-        with patch("scope.tui.app.get_current_session", return_value=None):
+        # Mock in_tmux to return False (not in tmux)
+        with patch("scope.tui.app.in_tmux", return_value=False):
             await pilot.press("n")
 
         # No session should be created
@@ -184,11 +184,12 @@ async def test_new_session_creates_session(setup_scope_dir):
     """Test that pressing n creates a new session when in tmux."""
     app = ScopeApp()
     async with app.run_test() as pilot:
-        # Mock get_current_session to return a session name (in tmux)
-        # Mock split_window to avoid actually splitting
+        # Mock in_tmux to return True (in tmux)
+        # Mock create_session and attach_in_split to avoid actually creating tmux sessions
         with (
-            patch("scope.tui.app.get_current_session", return_value="scope"),
-            patch("scope.tui.app.split_window") as mock_split,
+            patch("scope.tui.app.in_tmux", return_value=True),
+            patch("scope.tui.app.create_session") as mock_create,
+            patch("scope.tui.app.attach_in_split") as mock_attach,
         ):
             await pilot.press("n")
 
@@ -199,11 +200,15 @@ async def test_new_session_creates_session(setup_scope_dir):
             assert sessions[0].task == ""
             assert sessions[0].state == "running"
 
-            # split_window should have been called
-            mock_split.assert_called_once()
-            call_kwargs = mock_split.call_args.kwargs
+            # create_session should have been called
+            mock_create.assert_called_once()
+            call_kwargs = mock_create.call_args.kwargs
+            assert call_kwargs["name"] == "scope-0"
             assert call_kwargs["command"] == "claude"
             assert call_kwargs["env"] == {"SCOPE_SESSION_ID": "0"}
+
+            # attach_in_split should have been called
+            mock_attach.assert_called_once_with("scope-0")
 
 
 @pytest.mark.asyncio
@@ -212,8 +217,9 @@ async def test_new_session_appears_in_table(setup_scope_dir):
     app = ScopeApp()
     async with app.run_test() as pilot:
         with (
-            patch("scope.tui.app.get_current_session", return_value="scope"),
-            patch("scope.tui.app.split_window"),
+            patch("scope.tui.app.in_tmux", return_value=True),
+            patch("scope.tui.app.create_session"),
+            patch("scope.tui.app.attach_in_split"),
         ):
             await pilot.press("n")
 

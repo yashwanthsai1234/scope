@@ -399,3 +399,275 @@ Claude Code exits
 | Hooks | Unit tests with mock stdin |
 | TUI | Textual's built-in testing (pilot) |
 | CLI | Click's CliRunner |
+
+---
+
+## Addendum: Contracts & Task Types
+
+This section describes proposed extensions for task typing and agent selection.
+
+### Task Type System
+
+New field on Session: `task_type`
+
+| Type | Purpose | Expected Output |
+|------|---------|-----------------|
+| `explore` | Navigate/understand codebase | Insights, file locations, patterns found |
+| `implement` | Write/modify code | Files changed, summary of approach |
+| `test` | Run/validate | Pass/fail, failure details |
+| `review` | Analyze/reason about code | Assessment, concerns, suggestions |
+| `refactor` | Transform preserving behavior | Files changed, what was preserved |
+
+Default: `implement` (most common case).
+
+### Agent Selection
+
+New field on Session: `agent`
+
+| Agent | Description |
+|-------|-------------|
+| `claude-code` | Default. Full Claude Code session. |
+| `codex` | OpenAI Codex CLI. Fast, good at execution. |
+| `aider` | Aider tool. |
+| *(extensible)* | New agents can be added. |
+
+Agent selection can be:
+- **Explicit**: `--agent codex`
+- **Type-based**: Route by task type (e.g., `test` → codex)
+- **Cost-aware**: Use cheaper models for exploration
+
+### Updated Spawn Interface
+
+```bash
+scope spawn "task" --type explore --agent codex --input src/auth/
+```
+
+| Flag | Purpose |
+|------|---------|
+| `--type` | Task type (explore, implement, test, review, refactor) |
+| `--agent` | Agent to use (claude-code, codex, aider) |
+| `--input` | Path(s) to pass as context |
+
+### Updated Data Model
+
+```python
+@dataclass
+class Session:
+    id: str
+    task: str
+    task_type: str       # NEW: explore | implement | test | review | refactor
+    agent: str           # NEW: claude-code | codex | aider
+    parent: str
+    state: str
+    tmux_session: str
+    created_at: datetime
+```
+
+### Updated Filesystem Schema
+
+```
+.scope/sessions/0/
+├── task            # One-line description
+├── task_type       # NEW: explore | implement | test | review | refactor
+├── agent           # NEW: claude-code | codex | aider
+├── parent
+├── state
+├── activity
+├── result
+├── contract.md
+└── tmux
+```
+
+### Contract Generation by Task Type
+
+The child's contract (system prompt) is shaped by `task_type`:
+
+**explore:**
+```markdown
+## Task Type: Explore
+Your goal is to understand, not modify. Return:
+- Key insights about the code structure
+- Relevant file paths
+- Patterns or conventions observed
+Do NOT make changes. Focus on what the caller needs to know.
+```
+
+**implement:**
+```markdown
+## Task Type: Implement
+Write or modify code to accomplish the task. Return:
+- Files changed (list)
+- Brief summary of approach
+- Any assumptions made
+```
+
+**test:**
+```markdown
+## Task Type: Test
+Run and validate. Return:
+- Pass/fail status
+- Failure details (if any)
+- Coverage or confidence notes
+```
+
+**review:**
+```markdown
+## Task Type: Review
+Analyze the code. Return:
+- Assessment (good/concerning/needs work)
+- Specific concerns or issues
+- Suggestions for improvement
+Do NOT make changes unless explicitly asked.
+```
+
+**refactor:**
+```markdown
+## Task Type: Refactor
+Transform the code while preserving behavior. Return:
+- Files changed
+- What was preserved (behavior guarantees)
+- What was improved (structure, clarity, performance)
+```
+
+### Parent Decision Heuristics
+
+When should a parent spawn a subagent? Add to CLAUDE.md:
+
+```markdown
+## When to Spawn a Subagent
+
+Spawn when:
+- Task would consume significant context (>30% of window)
+- Task is parallelizable with other work
+- Task has clear inputs/outputs you can specify
+- Task is self-contained (doesn't need your running state)
+
+Don't spawn when:
+- Quick lookup or small edit (just do it)
+- Task requires back-and-forth dialogue
+- You need to see intermediate steps
+- Task is tightly coupled to your current work
+
+Remember: spawning preserves YOUR context. The subagent pays the context cost, you get back a concise result.
+```
+
+### Design Decisions
+
+**What we're adding:**
+- `task_type` — Shapes contract, helps routing, visible in TUI
+- `agent` — Enables Claude/Codex/Aider switching
+
+**What we're NOT adding:**
+
+| Feature | Why Not |
+|---------|---------|
+| `depends_on` (sibling deps) | Parent already handles sequencing via wait/poll. Adding deps makes Scope an orchestrator, conflicting with "visibility layer" philosophy. |
+| Auto-orchestration | Scope shows state, doesn't manage execution order. Parent is the orchestrator. |
+| Atomizer pattern | No explicit "should I decompose?" LLM call. Parent decides based on heuristics in CLAUDE.md. |
+| Aggregator pattern | No auto-synthesis of results. Parent reads results and synthesizes manually. |
+| Context auto-propagation | No auto-populating child context from deps. Parent explicitly passes `--input`. |
+
+**Rationale:** Keep Scope simple. Intelligence stays in the prompts, not the orchestration layer.
+
+---
+
+## Addendum: UX Redesign - Native tmux Experience
+
+### Goal
+
+Make scope feel native. No tmux knowledge required.
+
+### Current Problem
+
+- Sessions are tmux **windows** in one shared session
+- `select_window` switches away from scope, losing visibility
+- User must know tmux commands to navigate back
+- No split view (can't see scope + session simultaneously)
+
+### New Architecture
+
+**Each Claude Code session = its own tmux session**
+
+```
+tmux session "scope-0" (Claude Code for session 0)
+tmux session "scope-1" (Claude Code for session 1)
+
+User's terminal:
+┌─────────────────┬─────────────────┐
+│   scope         │  attached to    │
+│   (TUI)         │  scope-0        │
+└─────────────────┴─────────────────┘
+```
+
+### Key Behavior Changes
+
+| Action | Current | New |
+|--------|---------|-----|
+| Entry point | `scope top` (requires tmux) | `scope` (auto-launches tmux) |
+| `n` (new) | Creates window, stays on scope | Splits right, opens Claude Code |
+| `enter` (attach) | Switches window (leaves scope) | Splits right, attaches to session |
+| Close split | N/A | Detaches, returns to scope |
+| Session persistence | Window in shared session | Independent tmux session |
+
+### Startup Logic
+
+```python
+def main():
+    if not in_tmux():
+        # Auto-launch tmux with scope inside
+        os.execvp("tmux", ["tmux", "new-session", "-s", "scope-main", "scope", "--inside-tmux"])
+    else:
+        # Already in tmux, run the TUI
+        run_tui()
+```
+
+### Updated tmux Module
+
+```python
+def create_session(name: str, command: str, cwd: Path, env: dict) -> None:
+    """Create a new independent tmux session."""
+    # tmux new-session -d -s scope-0 -c /path "SCOPE_SESSION_ID=0 claude"
+
+def attach_in_split(session_name: str) -> None:
+    """Open a split pane attached to an existing session."""
+    # tmux split-window -h "tmux attach -t scope-0"
+
+def has_session(name: str) -> bool:
+    """Check if a tmux session exists."""
+
+def in_tmux() -> bool:
+    """Check if currently running inside tmux."""
+```
+
+### Updated Filesystem
+
+```
+.scope/sessions/0/
+├── tmux_session    # "scope-0" (independent session, was "w0" window)
+└── ...
+```
+
+### UX Flow
+
+1. User runs `scope`
+2. If not in tmux → auto-launches: `tmux new-session -s scope-main "scope --inside-tmux"`
+3. TUI shows sessions list
+4. Press `n`:
+   - Creates independent session: `tmux new-session -d -s scope-0 ... claude`
+   - Attaches in split: `tmux split-window -h "tmux attach -t scope-0"`
+   - User sees: scope (left) | Claude Code (right)
+5. Press `enter` on any session:
+   - Opens split attached to that session
+6. Close right pane (Ctrl-D):
+   - Detaches from session (session keeps running in background)
+   - Returns to scope TUI only
+7. Press `q`:
+   - Exits scope TUI
+   - All sessions continue running independently
+
+### Benefits
+
+- **No tmux knowledge needed**: User just runs `scope`, everything else is automatic
+- **Split view**: Always see scope + current session side by side
+- **Session independence**: Closing splits doesn't kill sessions
+- **Native feel**: Just `scope` to start, `q` to quit, close pane to detach

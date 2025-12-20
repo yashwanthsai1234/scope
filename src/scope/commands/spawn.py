@@ -9,9 +9,8 @@ from datetime import datetime, timezone
 import click
 
 from scope.core.session import Session
-from scope.core.state import next_id, save_session
-from scope.core.tmux import TmuxError
-from scope.core.tmux import create_session as tmux_create_session
+from scope.core.state import ensure_scope_dir, next_id, save_session
+from scope.core.tmux import TmuxError, create_session
 
 
 @click.command()
@@ -36,7 +35,7 @@ def spawn(task: str) -> None:
     # Get next available ID
     session_id = next_id(parent)
 
-    # Create session object
+    # Create session object - each session is an independent tmux session
     tmux_name = f"scope-{session_id}"
     session = Session(
         id=session_id,
@@ -50,11 +49,13 @@ def spawn(task: str) -> None:
     # Save session to filesystem
     save_session(session)
 
-    # Create tmux session with Claude Code
+    # Create independent tmux session with Claude Code
+    scope_dir = ensure_scope_dir()
     try:
-        tmux_create_session(
+        create_session(
             name=tmux_name,
             command="claude",
+            cwd=scope_dir.parent,  # Project root
             env={"SCOPE_SESSION_ID": session_id},
         )
     except TmuxError as e:

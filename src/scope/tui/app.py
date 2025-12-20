@@ -1,15 +1,23 @@
 """Main Textual app for scope TUI."""
 
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from textual.app import App, ComposeResult
-from textual.widgets import Footer, Header, Static
+from textual.widgets import DataTable, Footer, Header, Static
 
 from scope.core.session import Session
 from scope.core.state import ensure_scope_dir, load_all, next_id, save_session
-from scope.core.tmux import get_current_session, split_window
+from scope.core.tmux import (
+    TmuxError,
+    attach_in_split,
+    create_session,
+    detach_to_session,
+    enable_mouse,
+    has_session,
+    in_tmux,
+)
 from scope.tui.widgets.session_tree import SessionTable
 
 
@@ -22,8 +30,13 @@ class ScopeApp(App):
     TITLE = "scope"
     BINDINGS = [
         ("n", "new_session", "New"),
+        ("d", "detach", "Detach"),
         ("q", "quit", "Quit"),
     ]
+
+    # Track currently attached pane for detach functionality
+    _attached_pane_id: str | None = None
+    _attached_session_name: str | None = None
     CSS = """
     SessionTable {
         height: 1fr;
@@ -50,6 +63,9 @@ class ScopeApp(App):
 
     def on_mount(self) -> None:
         """Called when the app is mounted."""
+        # Enable tmux mouse mode for pane switching
+        if in_tmux():
+            enable_mouse()
         self.refresh_sessions()
         self._watcher_task = asyncio.create_task(self._watch_sessions())
 
@@ -81,33 +97,85 @@ class ScopeApp(App):
             self.sub_title = "0 sessions"
 
     def action_new_session(self) -> None:
-        """Create a new session in a split pane."""
+        """Create a new session and open it in a split pane."""
         # Check if we're running inside tmux
-        if get_current_session() is None:
-            self.notify(
-                "Run scope top inside tmux to create sessions", severity="error"
-            )
+        if not in_tmux():
+            self.notify("Not running inside tmux", severity="error")
             return
+
+        # Detach any currently attached pane first
+        if self._attached_pane_id:
+            self.action_detach()
 
         scope_dir = ensure_scope_dir()
         session_id = next_id("")
+        tmux_name = f"scope-{session_id}"
 
         session = Session(
             id=session_id,
             task="",  # Will be inferred from first user message via hooks
             parent="",
             state="running",
-            tmux_session=f"scope-{session_id}",
-            created_at=datetime.now(),
+            tmux_session=tmux_name,
+            created_at=datetime.now(timezone.utc),
         )
         save_session(session)
 
-        # Split current window to run claude with session ID
-        split_window(
-            command="claude",
-            cwd=scope_dir.parent,  # Project root
-            env={"SCOPE_SESSION_ID": session_id},
-        )
+        # Create independent tmux session with Claude Code
+        try:
+            create_session(
+                name=tmux_name,
+                command="claude",
+                cwd=scope_dir.parent,  # Project root
+                env={"SCOPE_SESSION_ID": session_id},
+            )
+            # Join the pane into current window (no nesting)
+            pane_id = attach_in_split(tmux_name)
+            self._attached_pane_id = pane_id
+            self._attached_session_name = tmux_name
+        except TmuxError as e:
+            self.notify(f"Failed to create session: {e}", severity="error")
+
+    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+        """Handle row selection (enter key) to attach to session in split pane."""
+        # Check if we're running inside tmux
+        if not in_tmux():
+            self.notify("Not running inside tmux", severity="error")
+            return
+
+        # Detach any currently attached pane first
+        if self._attached_pane_id:
+            self.action_detach()
+
+        # Get the session ID from the row key
+        session_id = str(event.row_key.value)
+        tmux_name = f"scope-{session_id}"
+
+        # Check if session exists
+        if not has_session(tmux_name):
+            self.notify(f"Session {session_id} not found", severity="error")
+            return
+
+        # Join the pane into current window (no nesting)
+        try:
+            pane_id = attach_in_split(tmux_name)
+            self._attached_pane_id = pane_id
+            self._attached_session_name = tmux_name
+        except TmuxError as e:
+            self.notify(f"Failed to attach: {e}", severity="error")
+
+    def action_detach(self) -> None:
+        """Detach the currently attached pane back to its own session."""
+        if not self._attached_pane_id or not self._attached_session_name:
+            return
+
+        try:
+            detach_to_session(self._attached_pane_id, self._attached_session_name)
+        except TmuxError:
+            pass  # Pane might already be gone
+        finally:
+            self._attached_pane_id = None
+            self._attached_session_name = None
 
     async def _watch_sessions(self) -> None:
         """Watch .scope/ for changes and refresh."""
