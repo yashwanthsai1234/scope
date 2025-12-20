@@ -8,7 +8,13 @@ from textual.app import App, ComposeResult
 from textual.widgets import DataTable, Footer, Header, Static
 
 from scope.core.session import Session
-from scope.core.state import delete_session, ensure_scope_dir, load_all, next_id, save_session
+from scope.core.state import (
+    delete_session,
+    ensure_scope_dir,
+    load_all,
+    next_id,
+    save_session,
+)
 from scope.core.tmux import (
     TmuxError,
     attach_in_split,

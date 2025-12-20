@@ -81,9 +81,7 @@ def install_hooks() -> None:
     settings["hooks"] = hooks
 
     # Write back with pretty formatting
-    settings_path.write_bytes(
-        orjson.dumps(settings, option=orjson.OPT_INDENT_2)
-    )
+    settings_path.write_bytes(orjson.dumps(settings, option=orjson.OPT_INDENT_2))
 
 
 def uninstall_hooks() -> None:
@@ -123,6 +121,4 @@ def uninstall_hooks() -> None:
     elif "hooks" in settings:
         del settings["hooks"]
 
-    settings_path.write_bytes(
-        orjson.dumps(settings, option=orjson.OPT_INDENT_2)
-    )
+    settings_path.write_bytes(orjson.dumps(settings, option=orjson.OPT_INDENT_2))

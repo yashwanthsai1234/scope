@@ -15,6 +15,9 @@ class TmuxError(Exception):
     pass
 
 
+SCOPE_SESSION = "scope"
+
+
 def in_tmux() -> bool:
     """Check if we're running inside a tmux session.
 
@@ -107,7 +110,14 @@ def detach_to_session(pane_id: str, session_name: str) -> None:
     # Create the destination session with a placeholder
     # Use a shell command that will be replaced when we move the pane
     result = subprocess.run(
-        ["tmux", "new-session", "-d", "-s", session_name, "cat"],  # cat blocks waiting for input
+        [
+            "tmux",
+            "new-session",
+            "-d",
+            "-s",
+            session_name,
+            "cat",
+        ],  # cat blocks waiting for input
         capture_output=True,
         text=True,
     )
@@ -127,7 +137,14 @@ def detach_to_session(pane_id: str, session_name: str) -> None:
     # Kill the placeholder pane (cat)
     # The moved pane should now be in the session, kill the 'cat' pane
     result = subprocess.run(
-        ["tmux", "list-panes", "-t", session_name, "-F", "#{pane_id} #{pane_current_command}"],
+        [
+            "tmux",
+            "list-panes",
+            "-t",
+            session_name,
+            "-F",
+            "#{pane_id} #{pane_current_command}",
+        ],
         capture_output=True,
         text=True,
     )
@@ -334,9 +351,12 @@ def create_window(
         "tmux",
         "new-window",
         "-d",  # Don't switch to the new window
-        "-t", target,
-        "-n", name,  # Window name
-        "-c", str(cwd),
+        "-t",
+        target,
+        "-n",
+        name,  # Window name
+        "-c",
+        str(cwd),
         full_command,
     ]
 

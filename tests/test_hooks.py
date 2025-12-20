@@ -255,6 +255,61 @@ def test_stop_hook_clears_activity(runner, setup_session):
     assert activity_file.read_text() == ""
 
 
+def test_stop_hook_captures_result(runner, setup_session, tmp_path):
+    """Test stop hook writes result from transcript."""
+    session_dir = setup_session
+
+    # Create a mock transcript file
+    transcript_file = tmp_path / "transcript.jsonl"
+    transcript_lines = [
+        orjson.dumps({"type": "user", "message": {"content": "Hello"}}).decode(),
+        orjson.dumps({
+            "type": "assistant",
+            "message": {
+                "content": [{"type": "text", "text": "Here is the result."}]
+            }
+        }).decode(),
+    ]
+    transcript_file.write_text("\n".join(transcript_lines))
+
+    input_json = orjson.dumps({
+        "transcript_path": str(transcript_file)
+    }).decode()
+
+    result = runner.invoke(main, ["stop"], input=input_json)
+
+    assert result.exit_code == 0
+    result_file = session_dir / "result"
+    assert result_file.exists()
+    assert result_file.read_text() == "Here is the result."
+
+
+def test_stop_hook_captures_last_assistant_message(runner, setup_session, tmp_path):
+    """Test stop hook captures the last assistant message from transcript."""
+    session_dir = setup_session
+
+    # Create transcript with multiple assistant messages
+    transcript_file = tmp_path / "transcript.jsonl"
+    transcript_lines = [
+        orjson.dumps({
+            "type": "assistant",
+            "message": {"content": [{"type": "text", "text": "First response"}]}
+        }).decode(),
+        orjson.dumps({"type": "user", "message": {"content": "More questions"}}).decode(),
+        orjson.dumps({
+            "type": "assistant",
+            "message": {"content": [{"type": "text", "text": "Final answer"}]}
+        }).decode(),
+    ]
+    transcript_file.write_text("\n".join(transcript_lines))
+
+    input_json = orjson.dumps({"transcript_path": str(transcript_file)}).decode()
+    result = runner.invoke(main, ["stop"], input=input_json)
+
+    assert result.exit_code == 0
+    assert (session_dir / "result").read_text() == "Final answer"
+
+
 def test_infer_activity_read():
     """Test infer_activity for Read tool."""
     assert infer_activity("Read", {"file_path": "/path/to/file.py"}) == "reading file.py"

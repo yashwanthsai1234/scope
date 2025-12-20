@@ -197,12 +197,62 @@ def task() -> None:
     task_file.write_text(summary)
 
 
+def extract_final_response(transcript_path: str) -> str | None:
+    """Extract the final assistant response from a transcript JSONL file.
+
+    Args:
+        transcript_path: Path to the conversation transcript (.jsonl)
+
+    Returns:
+        The text content of the last assistant message, or None if not found.
+    """
+    path = Path(transcript_path).expanduser()
+    if not path.exists():
+        return None
+
+    last_assistant_message = None
+
+    with path.open() as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                entry = orjson.loads(line)
+                # Look for assistant messages
+                if entry.get("type") == "assistant":
+                    message = entry.get("message", {})
+                    content = message.get("content", [])
+                    # Extract text blocks from content
+                    text_parts = []
+                    for block in content:
+                        if isinstance(block, dict) and block.get("type") == "text":
+                            text_parts.append(block.get("text", ""))
+                        elif isinstance(block, str):
+                            text_parts.append(block)
+                    if text_parts:
+                        last_assistant_message = "\n".join(text_parts)
+            except (orjson.JSONDecodeError, KeyError, TypeError):
+                continue
+
+    return last_assistant_message
+
+
 @main.command()
 def stop() -> None:
-    """Handle Stop hook - mark session as done."""
+    """Handle Stop hook - mark session as done and capture result."""
     session_dir = get_session_dir()
     if session_dir is None:
         return
+
+    # Extract final response from transcript
+    data = read_stdin_json()
+    transcript_path = data.get("transcript_path", "")
+    if transcript_path:
+        final_response = extract_final_response(transcript_path)
+        if final_response:
+            result_file = session_dir / "result"
+            result_file.write_text(final_response)
 
     # Update state to done
     state_file = session_dir / "state"
