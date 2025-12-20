@@ -1,6 +1,7 @@
 """Main Textual app for scope TUI."""
 
 import asyncio
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -58,9 +59,13 @@ class ScopeApp(App):
     }
     """
 
-    def __init__(self) -> None:
+    def __init__(self, dangerously_skip_permissions: bool = False) -> None:
         super().__init__()
         self._watcher_task: asyncio.Task | None = None
+        self._dangerously_skip_permissions = dangerously_skip_permissions
+
+        # Use instance ID from environment (set by CLI entry point)
+        self._instance_id = os.environ.get("SCOPE_INSTANCE_ID", "")
 
     def compose(self) -> ComposeResult:
         """Compose the app layout."""
@@ -131,11 +136,22 @@ class ScopeApp(App):
 
         # Create independent tmux session with Claude Code
         try:
+            command = "claude"
+            if self._dangerously_skip_permissions:
+                command = "claude --dangerously-skip-permissions"
+
+            # Build environment for spawned session
+            env = {"SCOPE_SESSION_ID": session_id}
+            if self._instance_id:
+                env["SCOPE_INSTANCE_ID"] = self._instance_id
+            if self._dangerously_skip_permissions:
+                env["SCOPE_DANGEROUSLY_SKIP_PERMISSIONS"] = "1"
+
             create_session(
                 name=tmux_name,
-                command="claude",
-                cwd=scope_dir.parent,  # Project root
-                env={"SCOPE_SESSION_ID": session_id},
+                command=command,
+                cwd=Path.cwd(),  # Project root
+                env=env,
             )
             # Join the pane into current window (no nesting)
             pane_id = attach_in_split(tmux_name)

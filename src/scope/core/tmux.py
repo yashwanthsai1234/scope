@@ -18,6 +18,19 @@ class TmuxError(Exception):
 SCOPE_SESSION = "scope"
 
 
+def is_installed() -> bool:
+    """Check if tmux is installed on the system.
+
+    Returns:
+        True if tmux is installed and accessible, False otherwise.
+    """
+    result = subprocess.run(
+        ["tmux", "-V"],
+        capture_output=True,
+    )
+    return result.returncode == 0
+
+
 def tmux_session_name(session_id: str) -> str:
     """Convert a scope session ID to a tmux session name.
 

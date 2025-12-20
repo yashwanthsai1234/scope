@@ -6,6 +6,7 @@ Creates a new scope session with Claude Code running in a tmux session.
 import os
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 
 import click
 
@@ -20,7 +21,14 @@ PENDING_TASK = "(pending...)"
 
 @click.command()
 @click.argument("prompt")
-def spawn(prompt: str) -> None:
+@click.option(
+    "--dangerously-skip-permissions",
+    is_flag=True,
+    envvar="SCOPE_DANGEROUSLY_SKIP_PERMISSIONS",
+    help="Pass --dangerously-skip-permissions to spawned Claude instance",
+)
+@click.pass_context
+def spawn(ctx: click.Context, prompt: str, dangerously_skip_permissions: bool) -> None:
     """Spawn a new scope session.
 
     Creates a tmux session running Claude Code with the given prompt.
@@ -35,7 +43,12 @@ def spawn(prompt: str) -> None:
 
         scope spawn "Fix the bug in database.py - connection times out after 30s"
     """
-    # Determine parent from environment
+    # Check if flag was passed via parent context
+    if ctx.obj and ctx.obj.get("dangerously_skip_permissions"):
+        dangerously_skip_permissions = True
+
+    # Get instance and parent from environment
+    instance_id = os.environ.get("SCOPE_INSTANCE_ID", "")
     parent = os.environ.get("SCOPE_SESSION_ID", "")
 
     # Get next available ID
@@ -63,11 +76,22 @@ def spawn(prompt: str) -> None:
 
     # Create independent tmux session with Claude Code
     try:
+        command = "claude"
+        if dangerously_skip_permissions:
+            command = "claude --dangerously-skip-permissions"
+
+        # Build environment for spawned session
+        env = {"SCOPE_SESSION_ID": session_id}
+        if instance_id:
+            env["SCOPE_INSTANCE_ID"] = instance_id
+        if dangerously_skip_permissions:
+            env["SCOPE_DANGEROUSLY_SKIP_PERMISSIONS"] = "1"
+
         create_session(
             name=tmux_name,
-            command="claude",
-            cwd=scope_dir.parent,  # Project root
-            env={"SCOPE_SESSION_ID": session_id},
+            command=command,
+            cwd=Path.cwd(),  # Project root
+            env=env,
         )
 
         # Wait for Claude Code to start, then send the contract

@@ -19,12 +19,20 @@ def get_session_dir() -> Path | None:
     """Get the session directory from SCOPE_SESSION_ID env var.
 
     Returns None if not in a scope session or session dir doesn't exist.
+    Uses instance-aware path if SCOPE_INSTANCE_ID is set.
     """
     session_id = os.environ.get("SCOPE_SESSION_ID", "")
     if not session_id:
         return None
 
-    session_dir = Path.cwd() / ".scope" / "sessions" / session_id
+    instance_id = os.environ.get("SCOPE_INSTANCE_ID", "")
+    base_dir = Path.cwd() / ".scope"
+
+    if instance_id:
+        session_dir = base_dir / "instances" / instance_id / "sessions" / session_id
+    else:
+        session_dir = base_dir / "sessions" / session_id
+
     if not session_dir.exists():
         return None
 

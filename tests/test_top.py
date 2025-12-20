@@ -15,6 +15,8 @@ from scope.tui.widgets.session_tree import SessionTable, _build_tree
 def setup_scope_dir(tmp_path, monkeypatch):
     """Set up a temporary scope directory."""
     monkeypatch.chdir(tmp_path)
+    # Clear instance ID so tests use non-instance path
+    monkeypatch.delenv("SCOPE_INSTANCE_ID", raising=False)
     scope_dir = tmp_path / ".scope" / "sessions"
     scope_dir.mkdir(parents=True)
     return tmp_path

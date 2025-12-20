@@ -8,6 +8,7 @@ Usage:
 """
 
 import os
+import uuid
 
 import click
 
@@ -22,9 +23,15 @@ from scope.core.tmux import in_tmux
 
 @click.group(invoke_without_command=True)
 @click.option("--inside-tmux", is_flag=True, hidden=True, help="Internal flag")
+@click.option(
+    "--dangerously-skip-permissions",
+    is_flag=True,
+    envvar="SCOPE_DANGEROUSLY_SKIP_PERMISSIONS",
+    help="Pass --dangerously-skip-permissions to spawned Claude instances",
+)
 @click.version_option()
 @click.pass_context
-def main(ctx: click.Context, inside_tmux: bool) -> None:
+def main(ctx: click.Context, inside_tmux: bool, dangerously_skip_permissions: bool) -> None:
     """Scope - Subagent orchestration for Claude Code.
 
     Spawn bounded, purpose-specific subagents. Preserve your context.
@@ -32,22 +39,37 @@ def main(ctx: click.Context, inside_tmux: bool) -> None:
 
     Running 'scope' without a subcommand launches the TUI.
     """
+    # Store in context for subcommands
+    ctx.ensure_object(dict)
+    ctx.obj["dangerously_skip_permissions"] = dangerously_skip_permissions
+
     # If a subcommand was invoked, let it handle things
     if ctx.invoked_subcommand is not None:
         return
+
+    # Generate unique instance ID for this TUI session if not already set
+    # This ensures multiple scope instances don't conflict
+    instance_id = os.environ.get("SCOPE_INSTANCE_ID", "")
+    if not instance_id:
+        instance_id = str(uuid.uuid4())[:8]
+        os.environ["SCOPE_INSTANCE_ID"] = instance_id
 
     # No subcommand - launch the TUI
     if not in_tmux():
         # Not in tmux - launch tmux with scope inside
         # Use -A to attach if session exists, or create if it doesn't
-        # Enable mouse mode for pane switching
-        os.execvp(
-            "tmux",
-            ["tmux", "new-session", "-A", "-s", "scope-main", "scope", "--inside-tmux"],
-        )
+        # Build command with env vars prefixed (tmux doesn't inherit parent env reliably)
+        scope_cmd = f"SCOPE_INSTANCE_ID={instance_id}"
+        if dangerously_skip_permissions:
+            scope_cmd += " SCOPE_DANGEROUSLY_SKIP_PERMISSIONS=1"
+        scope_cmd += " scope --inside-tmux"
+        if dangerously_skip_permissions:
+            scope_cmd += " --dangerously-skip-permissions"
+
+        os.execvp("tmux", ["tmux", "new-session", "-A", "-s", "scope-main", scope_cmd])
     else:
         # Already in tmux - run the TUI directly
-        ctx.invoke(top)
+        ctx.invoke(top, dangerously_skip_permissions=dangerously_skip_permissions)
 
 
 # Register commands

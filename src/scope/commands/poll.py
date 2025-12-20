@@ -3,12 +3,10 @@
 Returns session status as JSON.
 """
 
-from pathlib import Path
-
 import click
 import orjson
 
-from scope.core.state import load_session
+from scope.core.state import ensure_scope_dir, load_session
 
 
 @click.command()
@@ -34,7 +32,8 @@ def poll(session_id: str) -> None:
 
     result: dict[str, str] = {"status": session.state}
 
-    session_dir = Path.cwd() / ".scope" / "sessions" / session_id
+    scope_dir = ensure_scope_dir()
+    session_dir = scope_dir / "sessions" / session_id
 
     # Activity will be added in Slice 7
     activity_file = session_dir / "activity"

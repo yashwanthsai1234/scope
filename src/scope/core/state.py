@@ -1,28 +1,51 @@
 """State management for scope sessions.
 
-All session data is stored in .scope/sessions/{id}/ with individual files:
+All session data is stored in .scope/instances/{instance_id}/sessions/{id}/ with individual files:
 - task: One-line task description
 - state: Current state (running, done, aborted)
 - parent: Parent session ID (empty for root)
 - tmux: tmux session name
 - created_at: ISO format timestamp
+
+Each scope TUI instance gets its own unique instance_id (UUID) to avoid conflicts.
 """
 
+import os
 from datetime import datetime
 from pathlib import Path
 
 from scope.core.session import Session
 
 
-def ensure_scope_dir() -> Path:
-    """Ensure .scope directory exists in current working directory.
+def get_instance_id() -> str:
+    """Get the current scope instance ID.
 
-    Creates .scope/ and .scope/sessions/ if they don't exist.
+    Returns the instance ID from SCOPE_INSTANCE_ID environment variable.
+    If not set, returns empty string (for backwards compatibility or CLI usage).
 
     Returns:
-        Path to .scope directory.
+        Instance ID string or empty string.
     """
-    scope_dir = Path.cwd() / ".scope"
+    return os.environ.get("SCOPE_INSTANCE_ID", "")
+
+
+def ensure_scope_dir() -> Path:
+    """Ensure scope directory exists for the current instance.
+
+    If SCOPE_INSTANCE_ID is set, creates .scope/instances/{id}/sessions/.
+    Otherwise creates .scope/sessions/ (backwards compatible).
+
+    Returns:
+        Path to scope directory (either .scope/ or .scope/instances/{id}/).
+    """
+    base_dir = Path.cwd() / ".scope"
+    instance_id = get_instance_id()
+
+    if instance_id:
+        scope_dir = base_dir / "instances" / instance_id
+    else:
+        scope_dir = base_dir
+
     sessions_dir = scope_dir / "sessions"
     sessions_dir.mkdir(parents=True, exist_ok=True)
     return scope_dir
@@ -113,6 +136,23 @@ def save_session(session: Session) -> None:
     (session_dir / "created_at").write_text(session.created_at.isoformat())
 
 
+def _get_scope_dir() -> Path:
+    """Get the scope directory for the current instance.
+
+    Returns the instance-specific directory if SCOPE_INSTANCE_ID is set,
+    otherwise returns .scope/ directly.
+
+    Returns:
+        Path to scope directory.
+    """
+    base_dir = Path.cwd() / ".scope"
+    instance_id = get_instance_id()
+
+    if instance_id:
+        return base_dir / "instances" / instance_id
+    return base_dir
+
+
 def load_session(session_id: str) -> Session | None:
     """Load a session by ID.
 
@@ -122,7 +162,7 @@ def load_session(session_id: str) -> Session | None:
     Returns:
         Session object if found, None if session directory doesn't exist.
     """
-    scope_dir = Path.cwd() / ".scope"
+    scope_dir = _get_scope_dir()
     session_dir = _get_session_dir(scope_dir, session_id)
 
     if not session_dir.exists():
@@ -139,13 +179,13 @@ def load_session(session_id: str) -> Session | None:
 
 
 def load_all() -> list[Session]:
-    """Load all sessions from .scope/sessions/.
+    """Load all sessions from the current instance's sessions directory.
 
     Returns:
         List of all sessions, sorted by created_at (oldest first).
-        Returns empty list if .scope/sessions/ doesn't exist.
+        Returns empty list if sessions directory doesn't exist.
     """
-    scope_dir = Path.cwd() / ".scope"
+    scope_dir = _get_scope_dir()
     sessions_dir = scope_dir / "sessions"
 
     if not sessions_dir.exists():
@@ -171,7 +211,7 @@ def update_state(session_id: str, state: str) -> None:
     Raises:
         FileNotFoundError: If session doesn't exist.
     """
-    scope_dir = Path.cwd() / ".scope"
+    scope_dir = _get_scope_dir()
     session_dir = _get_session_dir(scope_dir, session_id)
 
     if not session_dir.exists():
@@ -191,7 +231,7 @@ def delete_session(session_id: str) -> None:
     """
     import shutil
 
-    scope_dir = Path.cwd() / ".scope"
+    scope_dir = _get_scope_dir()
     session_dir = _get_session_dir(scope_dir, session_id)
 
     if not session_dir.exists():

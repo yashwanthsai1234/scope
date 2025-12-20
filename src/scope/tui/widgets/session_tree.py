@@ -90,9 +90,10 @@ class SessionTable(DataTable):
         Returns:
             Activity string or "-" if none.
         """
-        from pathlib import Path
+        from scope.core.state import ensure_scope_dir
 
-        activity_file = Path.cwd() / ".scope" / "sessions" / session_id / "activity"
+        scope_dir = ensure_scope_dir()
+        activity_file = scope_dir / "sessions" / session_id / "activity"
         if activity_file.exists():
             activity = activity_file.read_text().strip()
             if activity:

@@ -8,7 +8,7 @@ from pathlib import Path
 import click
 from watchfiles import watch
 
-from scope.core.state import load_session
+from scope.core.state import ensure_scope_dir, load_session
 
 
 TERMINAL_STATES = {"done", "aborted"}
@@ -31,6 +31,8 @@ def wait(session_ids: tuple[str, ...]) -> None:
 
         scope wait 0 1 2
     """
+    scope_dir = ensure_scope_dir()
+
     # Validate all sessions exist
     pending: dict[str, Path] = {}  # session_id -> session_dir
     for session_id in session_ids:
@@ -38,7 +40,7 @@ def wait(session_ids: tuple[str, ...]) -> None:
         if session is None:
             click.echo(f"Session {session_id} not found", err=True)
             raise SystemExit(1)
-        pending[session_id] = Path.cwd() / ".scope" / "sessions" / session_id
+        pending[session_id] = scope_dir / "sessions" / session_id
 
     results: dict[str, str] = {}  # session_id -> state
 
@@ -80,11 +82,12 @@ def wait(session_ids: tuple[str, ...]) -> None:
 
 def _output_results(session_ids: tuple[str, ...], states: dict[str, str]) -> None:
     """Output results for all sessions and exit with appropriate code."""
+    scope_dir = ensure_scope_dir()
     any_aborted = False
     multiple = len(session_ids) > 1
 
     for session_id in session_ids:
-        result_file = Path.cwd() / ".scope" / "sessions" / session_id / "result"
+        result_file = scope_dir / "sessions" / session_id / "result"
         if result_file.exists():
             if multiple:
                 click.echo(f"[{session_id}]")
