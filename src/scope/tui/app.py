@@ -40,12 +40,18 @@ class ScopeApp(App):
     BINDINGS = [
         ("n", "new_session", "New"),
         ("x", "abort_session", "Abort"),
+        ("j", "cursor_down", "Down"),
+        ("k", "cursor_up", "Up"),
+        ("space", "toggle_collapse", "Expand"),
+        ("h", "toggle_hide_done", "Hide Done"),
         ("q", "quit", "Quit"),
     ]
 
     # Track currently attached pane for detach functionality
     _attached_pane_id: str | None = None
     _attached_session_name: str | None = None
+    # Filter state
+    _hide_done: bool = False
     CSS = """
     SessionTable {
         height: 1fr;
@@ -98,12 +104,13 @@ class ScopeApp(App):
         empty_msg = self.query_one("#empty-message", Static)
 
         if sessions:
-            table.update_sessions(sessions)
+            table.update_sessions(sessions, hide_done=self._hide_done)
             table.display = True
             empty_msg.display = False
-            # Update subtitle with running count
+            # Update subtitle with running count and filter status
             running = sum(1 for s in sessions if s.state == "running")
-            self.sub_title = f"{running} running"
+            filter_text = " [filtered]" if self._hide_done else ""
+            self.sub_title = f"{running} running{filter_text}"
         else:
             table.display = False
             empty_msg.display = True
@@ -218,7 +225,8 @@ class ScopeApp(App):
             return
 
         session_id = row_key[0]  # First column is ID (may be indented)
-        session_id = session_id.strip()  # Remove indentation
+        # Remove indentation and tree indicators (▶▼)
+        session_id = session_id.lstrip("▶▼ ").strip()
         tmux_name = tmux_session_name(session_id)
 
         # If this session is currently attached, kill the pane first
@@ -243,6 +251,16 @@ class ScopeApp(App):
         except FileNotFoundError:
             pass  # Already gone
 
+        self.refresh_sessions()
+
+    def action_toggle_collapse(self) -> None:
+        """Toggle expand/collapse on the selected session."""
+        table = self.query_one(SessionTable)
+        table.toggle_collapse()
+
+    def action_toggle_hide_done(self) -> None:
+        """Toggle hiding of done/aborted sessions."""
+        self._hide_done = not self._hide_done
         self.refresh_sessions()
 
     async def _watch_sessions(self) -> None:

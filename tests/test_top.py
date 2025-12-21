@@ -231,13 +231,13 @@ async def test_new_session_appears_in_table(setup_scope_dir):
             table = app.query_one(SessionTable)
             assert table.row_count == 1
             row_data = table.get_row_at(0)
-            assert row_data[0] == "0"  # ID
+            assert row_data[0] == "  0"  # ID with indicator space (no children)
             assert row_data[1] == "(pending...)"  # Task (empty shows pending)
 
 
 def test_build_tree_empty():
     """Test _build_tree with no sessions."""
-    result = _build_tree([])
+    result = _build_tree([], collapsed=set())
     assert result == []
 
 
@@ -251,9 +251,10 @@ def test_build_tree_single_root():
         tmux_session="scope-0",
         created_at=datetime.now(timezone.utc),
     )
-    result = _build_tree([session])
+    result = _build_tree([session], collapsed=set())
     assert len(result) == 1
-    assert result[0] == (session, 0)
+    # Returns (session, depth, has_children)
+    assert result[0] == (session, 0, False)
 
 
 def test_build_tree_with_children():
@@ -284,13 +285,13 @@ def test_build_tree_with_children():
     )
 
     # Order shouldn't matter for input
-    result = _build_tree([child2, parent, child1])
+    result = _build_tree([child2, parent, child1], collapsed=set())
 
     # Output should be parent first, then children sorted by ID
     assert len(result) == 3
-    assert result[0] == (parent, 0)
-    assert result[1] == (child1, 1)
-    assert result[2] == (child2, 1)
+    assert result[0] == (parent, 0, True)  # has_children=True
+    assert result[1] == (child1, 1, False)
+    assert result[2] == (child2, 1, False)
 
 
 def test_build_tree_nested():
@@ -320,12 +321,12 @@ def test_build_tree_nested():
         created_at=datetime(2024, 1, 1, 14, 0, 0, tzinfo=timezone.utc),
     )
 
-    result = _build_tree([grandchild, root, child])
+    result = _build_tree([grandchild, root, child], collapsed=set())
 
     assert len(result) == 3
-    assert result[0] == (root, 0)
-    assert result[1] == (child, 1)
-    assert result[2] == (grandchild, 2)
+    assert result[0] == (root, 0, True)
+    assert result[1] == (child, 1, True)
+    assert result[2] == (grandchild, 2, False)
 
 
 def test_build_tree_multiple_roots():
@@ -355,13 +356,104 @@ def test_build_tree_multiple_roots():
         created_at=datetime(2024, 1, 1, 14, 0, 0, tzinfo=timezone.utc),
     )
 
-    result = _build_tree([child_of_0, root2, root1])
+    result = _build_tree([child_of_0, root2, root1], collapsed=set())
 
     # Should be sorted: 0, 0.0, 1
     assert len(result) == 3
-    assert result[0] == (root1, 0)
-    assert result[1] == (child_of_0, 1)
-    assert result[2] == (root2, 0)
+    assert result[0] == (root1, 0, True)
+    assert result[1] == (child_of_0, 1, False)
+    assert result[2] == (root2, 0, False)
+
+
+def test_build_tree_collapsed():
+    """Test _build_tree with collapsed nodes skips their children."""
+    root = Session(
+        id="0",
+        task="Root",
+        parent="",
+        state="running",
+        tmux_session="scope-0",
+        created_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc),
+    )
+    child = Session(
+        id="0.0",
+        task="Child",
+        parent="0",
+        state="running",
+        tmux_session="scope-0.0",
+        created_at=datetime(2024, 1, 1, 13, 0, 0, tzinfo=timezone.utc),
+    )
+    grandchild = Session(
+        id="0.0.0",
+        task="Grandchild",
+        parent="0.0",
+        state="running",
+        tmux_session="scope-0.0.0",
+        created_at=datetime(2024, 1, 1, 14, 0, 0, tzinfo=timezone.utc),
+    )
+
+    # Collapse the root - should hide child and grandchild
+    result = _build_tree([grandchild, root, child], collapsed={"0"})
+
+    assert len(result) == 1
+    assert result[0] == (root, 0, True)  # Still has_children=True
+
+    # Collapse just the child - should show root and child but not grandchild
+    result = _build_tree([grandchild, root, child], collapsed={"0.0"})
+
+    assert len(result) == 2
+    assert result[0] == (root, 0, True)
+    assert result[1] == (child, 1, True)  # Still has_children=True
+
+
+def test_build_tree_hide_done():
+    """Test _build_tree with hide_done=True filters out done/aborted sessions."""
+    root = Session(
+        id="0",
+        task="Running root",
+        parent="",
+        state="running",
+        tmux_session="scope-0",
+        created_at=datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc),
+    )
+    done_root = Session(
+        id="1",
+        task="Done root",
+        parent="",
+        state="done",
+        tmux_session="scope-1",
+        created_at=datetime(2024, 1, 1, 13, 0, 0, tzinfo=timezone.utc),
+    )
+    aborted_root = Session(
+        id="2",
+        task="Aborted root",
+        parent="",
+        state="aborted",
+        tmux_session="scope-2",
+        created_at=datetime(2024, 1, 1, 14, 0, 0, tzinfo=timezone.utc),
+    )
+    child_of_done = Session(
+        id="1.0",
+        task="Child of done (still running)",
+        parent="1",
+        state="running",
+        tmux_session="scope-1.0",
+        created_at=datetime(2024, 1, 1, 15, 0, 0, tzinfo=timezone.utc),
+    )
+
+    # With hide_done=False, all sessions visible
+    result = _build_tree(
+        [root, done_root, aborted_root, child_of_done], collapsed=set(), hide_done=False
+    )
+    assert len(result) == 4
+
+    # With hide_done=True, done/aborted roots and their children are hidden
+    result = _build_tree(
+        [root, done_root, aborted_root, child_of_done], collapsed=set(), hide_done=True
+    )
+
+    assert len(result) == 1
+    assert result[0] == (root, 0, False)
 
 
 @pytest.mark.asyncio
@@ -391,10 +483,10 @@ async def test_session_table_shows_nested_sessions(setup_scope_dir):
         table = app.query_one(SessionTable)
         assert table.row_count == 2
 
-        # Parent should not be indented
+        # Parent should have expand indicator (▼) since it has children
         parent_row = table.get_row_at(0)
-        assert parent_row[0] == "0"
+        assert parent_row[0] == "▼ 0"
 
-        # Child should be indented
+        # Child should be indented with indicator space
         child_row = table.get_row_at(1)
-        assert child_row[0] == "  0.0"  # Two spaces of indentation
+        assert child_row[0] == "    0.0"  # 2 spaces indent + 2 spaces indicator
