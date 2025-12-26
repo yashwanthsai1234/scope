@@ -1,6 +1,6 @@
 """Spawn command for scope.
 
-Creates a new scope session with Claude Code running in a tmux session.
+Creates a new scope session with Claude Code running in a tmux window.
 """
 
 import os
@@ -13,7 +13,7 @@ import click
 from scope.core.contract import generate_contract
 from scope.core.session import Session
 from scope.core.state import ensure_scope_dir, next_id, save_session
-from scope.core.tmux import TmuxError, create_session, send_keys, tmux_session_name
+from scope.core.tmux import TmuxError, create_window, send_keys, tmux_window_name
 
 # Placeholder task - will be inferred from first prompt via hooks
 PENDING_TASK = "(pending...)"
@@ -31,7 +31,7 @@ PENDING_TASK = "(pending...)"
 def spawn(ctx: click.Context, prompt: str, dangerously_skip_permissions: bool) -> None:
     """Spawn a new scope session.
 
-    Creates a tmux session running Claude Code with the given prompt.
+    Creates a tmux window running Claude Code with the given prompt.
     Prints the session ID to stdout.
 
     PROMPT is the initial prompt/context to send to Claude Code.
@@ -47,21 +47,20 @@ def spawn(ctx: click.Context, prompt: str, dangerously_skip_permissions: bool) -
     if ctx.obj and ctx.obj.get("dangerously_skip_permissions"):
         dangerously_skip_permissions = True
 
-    # Get instance and parent from environment
-    instance_id = os.environ.get("SCOPE_INSTANCE_ID", "")
+    # Get parent from environment (for nested sessions)
     parent = os.environ.get("SCOPE_SESSION_ID", "")
 
     # Get next available ID
     session_id = next_id(parent)
 
     # Create session object - task will be inferred by hooks
-    tmux_name = tmux_session_name(session_id)
+    window_name = tmux_window_name(session_id)
     session = Session(
         id=session_id,
         task=PENDING_TASK,
         parent=parent,
         state="running",
-        tmux_session=tmux_name,
+        tmux_session=window_name,  # Store window name (kept as tmux_session for compat)
         created_at=datetime.now(timezone.utc),
     )
 
@@ -74,7 +73,7 @@ def spawn(ctx: click.Context, prompt: str, dangerously_skip_permissions: bool) -
     session_dir = scope_dir / "sessions" / session_id
     (session_dir / "contract.md").write_text(contract)
 
-    # Create independent tmux session with Claude Code
+    # Create tmux window with Claude Code
     try:
         command = "claude"
         if dangerously_skip_permissions:
@@ -82,13 +81,11 @@ def spawn(ctx: click.Context, prompt: str, dangerously_skip_permissions: bool) -
 
         # Build environment for spawned session
         env = {"SCOPE_SESSION_ID": session_id}
-        if instance_id:
-            env["SCOPE_INSTANCE_ID"] = instance_id
         if dangerously_skip_permissions:
             env["SCOPE_DANGEROUSLY_SKIP_PERMISSIONS"] = "1"
 
-        create_session(
-            name=tmux_name,
+        create_window(
+            name=window_name,
             command=command,
             cwd=Path.cwd(),  # Project root
             env=env,
@@ -96,7 +93,7 @@ def spawn(ctx: click.Context, prompt: str, dangerously_skip_permissions: bool) -
 
         # Wait for Claude Code to start, then send the contract
         time.sleep(1)
-        send_keys(tmux_name, contract)
+        send_keys(f":{window_name}", contract)
 
     except TmuxError as e:
         click.echo(f"Error: {e}", err=True)

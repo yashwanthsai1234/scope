@@ -1,7 +1,8 @@
 """tmux wrapper for scope.
 
-Provides functions to create and manage tmux sessions for scope.
-Each Claude Code session runs in its own independent tmux session.
+Provides functions to create and manage tmux windows for scope.
+Each Claude Code session runs in its own window within the main scope session.
+This allows attaching/detaching without destroying sessions.
 """
 
 import os
@@ -45,6 +46,18 @@ def tmux_session_name(session_id: str) -> str:
     return f"scope-{session_id.replace('.', '-')}"
 
 
+def tmux_window_name(session_id: str) -> str:
+    """Convert a scope session ID to a tmux window name.
+
+    Args:
+        session_id: The scope session ID (e.g., "0", "0.0", "0.0.1")
+
+    Returns:
+        Window name (e.g., "w0", "w0-0", "w0-0-1")
+    """
+    return f"w{session_id.replace('.', '-')}"
+
+
 def in_tmux() -> bool:
     """Check if we're running inside a tmux session.
 
@@ -59,14 +72,14 @@ def enable_mouse() -> None:
     subprocess.run(["tmux", "set", "-g", "mouse", "on"], capture_output=True)
 
 
-def attach_in_split(session_name: str) -> str:
-    """Join a session's pane into the current window as a horizontal split.
+def attach_in_split(window_name: str) -> str:
+    """Join a window's pane into the current window as a horizontal split.
 
-    Uses join-pane instead of nested tmux attach, which allows proper
-    mouse/keyboard interaction with both panes.
+    Uses join-pane to move the pane from the target window into the current
+    window, allowing proper mouse/keyboard interaction with both panes.
 
     Args:
-        session_name: The tmux session to pull from (e.g., "scope-0")
+        window_name: The tmux window to pull from (e.g., "w0")
 
     Returns:
         The pane ID of the joined pane (e.g., "%5")
@@ -82,10 +95,11 @@ def attach_in_split(session_name: str) -> str:
     )
     panes_before = set(before.stdout.strip().split("\n"))
 
-    # Join the pane from the target session into current window
+    # Join the pane from the target window into current window
     # -h: horizontal split (side by side)
+    # Use :{window_name}.0 to reference window by name in current session
     result = subprocess.run(
-        ["tmux", "join-pane", "-h", "-s", f"{session_name}:0.0"],
+        ["tmux", "join-pane", "-h", "-s", f":{window_name}.0"],
         capture_output=True,
         text=True,
     )
@@ -113,14 +127,14 @@ def attach_in_split(session_name: str) -> str:
     return result.stdout.strip()
 
 
-def detach_to_session(pane_id: str, session_name: str) -> None:
-    """Move a pane back to its own tmux session.
+def detach_to_window(pane_id: str, window_name: str) -> None:
+    """Move a pane back to its own tmux window.
 
-    Recreates the session if needed and moves the pane there.
+    Uses break-pane to move the pane to a new window with the given name.
 
     Args:
         pane_id: The pane to move (e.g., "%5")
-        session_name: The session to move it to (e.g., "scope-0")
+        window_name: The window name to create (e.g., "w0")
 
     Raises:
         TmuxError: If tmux command fails.
@@ -134,55 +148,16 @@ def detach_to_session(pane_id: str, session_name: str) -> None:
     if result.returncode != 0:
         raise TmuxError(f"Pane {pane_id} not found")
 
-    # Create the destination session with a placeholder
-    # Use a shell command that will be replaced when we move the pane
+    # Use break-pane to move the pane to its own window
+    # -d: don't switch to the new window
+    # -n: name the new window
     result = subprocess.run(
-        [
-            "tmux",
-            "new-session",
-            "-d",
-            "-s",
-            session_name,
-            "cat",
-        ],  # cat blocks waiting for input
-        capture_output=True,
-        text=True,
-    )
-    # Check if session exists now (either we created it or it already existed)
-    if not has_session(session_name):
-        raise TmuxError(f"Could not create session {session_name}: {result.stderr}")
-
-    # Move the pane to the new session's window
-    result = subprocess.run(
-        ["tmux", "move-pane", "-s", pane_id, "-t", f"{session_name}:0"],
+        ["tmux", "break-pane", "-d", "-s", pane_id, "-n", window_name],
         capture_output=True,
         text=True,
     )
     if result.returncode != 0:
-        raise TmuxError(f"Failed to move pane: {result.stderr}")
-
-    # Kill the placeholder pane (cat)
-    # The moved pane should now be in the session, kill the 'cat' pane
-    result = subprocess.run(
-        [
-            "tmux",
-            "list-panes",
-            "-t",
-            session_name,
-            "-F",
-            "#{pane_id} #{pane_current_command}",
-        ],
-        capture_output=True,
-        text=True,
-    )
-    for line in result.stdout.strip().split("\n"):
-        if line and "cat" in line.lower():
-            cat_pane = line.split()[0]
-            subprocess.run(
-                ["tmux", "kill-pane", "-t", cat_pane],
-                capture_output=True,
-            )
-            break
+        raise TmuxError(f"Failed to break pane: {result.stderr}")
 
 
 def ensure_scope_session() -> None:
@@ -263,6 +238,44 @@ def has_session(name: str) -> bool:
         capture_output=True,
     )
     return result.returncode == 0
+
+
+def has_window(name: str) -> bool:
+    """Check if a tmux window exists in the current session.
+
+    Args:
+        name: Window name to check.
+
+    Returns:
+        True if window exists, False otherwise.
+    """
+    result = subprocess.run(
+        ["tmux", "list-windows", "-F", "#{window_name}"],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        return False
+    windows = result.stdout.strip().split("\n")
+    return name in windows
+
+
+def kill_window(name: str) -> None:
+    """Kill a tmux window by name.
+
+    Args:
+        name: Window name to kill (e.g., "w0")
+
+    Raises:
+        TmuxError: If tmux command fails.
+    """
+    result = subprocess.run(
+        ["tmux", "kill-window", "-t", f":{name}"],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise TmuxError(f"Failed to kill window {name}: {result.stderr}")
 
 
 def kill_session(name: str) -> None:
@@ -408,11 +421,11 @@ def select_window(name: str) -> None:
         raise TmuxError(f"Failed to select window: {result.stderr}")
 
 
-def send_keys(session_name: str, keys: str, submit: bool = True) -> None:
-    """Send keys to a tmux session.
+def send_keys(target: str, keys: str, submit: bool = True) -> None:
+    """Send keys to a tmux target (window or session).
 
     Args:
-        session_name: The tmux session to send keys to (e.g., "scope-0").
+        target: The tmux target to send keys to (e.g., ":w0" for window, "scope-0" for session).
         keys: The text to send.
         submit: Whether to send C-m (Enter) after the keys to submit. Defaults to True.
 
@@ -422,7 +435,7 @@ def send_keys(session_name: str, keys: str, submit: bool = True) -> None:
     import time
 
     # Send message text (no -l flag for raw send)
-    cmd = ["tmux", "send-keys", "-t", session_name, keys]
+    cmd = ["tmux", "send-keys", "-t", target, keys]
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
         raise TmuxError(f"Failed to send keys: {result.stderr}")
@@ -432,7 +445,7 @@ def send_keys(session_name: str, keys: str, submit: bool = True) -> None:
         time.sleep(1)
         # C-m (Ctrl+M) is carriage return - submits in Claude Code
         result = subprocess.run(
-            ["tmux", "send-keys", "-t", session_name, "C-m"],
+            ["tmux", "send-keys", "-t", target, "C-m"],
             capture_output=True,
             text=True,
         )

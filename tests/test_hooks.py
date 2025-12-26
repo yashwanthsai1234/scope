@@ -20,9 +20,8 @@ def runner():
 
 
 @pytest.fixture
-def setup_session(tmp_path, monkeypatch):
+def setup_session(mock_scope_base, monkeypatch):
     """Set up a session directory and environment."""
-    monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("SCOPE_SESSION_ID", "0")
 
     session = Session(
@@ -34,7 +33,7 @@ def setup_session(tmp_path, monkeypatch):
         created_at=datetime.now(timezone.utc),
     )
     save_session(session)
-    return tmp_path / ".scope" / "sessions" / "0"
+    return mock_scope_base / "sessions" / "0"
 
 
 def test_activity_hook_writes_file(runner, setup_session):
@@ -102,9 +101,8 @@ def test_activity_hook_bash_long_command(runner, setup_session):
     assert activity.endswith("...")
 
 
-def test_activity_hook_no_session_id(runner, tmp_path, monkeypatch):
+def test_activity_hook_no_session_id(runner, mock_scope_base, monkeypatch):
     """Test activity hook exits silently without session ID."""
-    monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("SCOPE_SESSION_ID", raising=False)
 
     input_json = orjson.dumps({
@@ -116,12 +114,11 @@ def test_activity_hook_no_session_id(runner, tmp_path, monkeypatch):
 
     assert result.exit_code == 0
     # No activity file should be created
-    assert not (tmp_path / ".scope" / "sessions").exists()
+    assert not (mock_scope_base / "sessions").exists()
 
 
-def test_activity_hook_session_not_found(runner, tmp_path, monkeypatch):
+def test_activity_hook_session_not_found(runner, mock_scope_base, monkeypatch):
     """Test activity hook exits silently if session dir doesn't exist."""
-    monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("SCOPE_SESSION_ID", "999")
 
     input_json = orjson.dumps({

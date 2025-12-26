@@ -11,19 +11,8 @@ from scope.tui.app import ScopeApp
 from scope.tui.widgets.session_tree import SessionTable, _build_tree
 
 
-@pytest.fixture
-def setup_scope_dir(tmp_path, monkeypatch):
-    """Set up a temporary scope directory."""
-    monkeypatch.chdir(tmp_path)
-    # Clear instance ID so tests use non-instance path
-    monkeypatch.delenv("SCOPE_INSTANCE_ID", raising=False)
-    scope_dir = tmp_path / ".scope" / "sessions"
-    scope_dir.mkdir(parents=True)
-    return tmp_path
-
-
 @pytest.mark.asyncio
-async def test_app_launches(setup_scope_dir):
+async def test_app_launches(mock_scope_base):
     """Test that the app launches without error."""
     app = ScopeApp()
     async with app.run_test() as pilot:
@@ -32,7 +21,7 @@ async def test_app_launches(setup_scope_dir):
 
 
 @pytest.mark.asyncio
-async def test_app_shows_empty_message(setup_scope_dir):
+async def test_app_shows_empty_message(mock_scope_base):
     """Test that empty state shows message."""
     app = ScopeApp()
     async with app.run_test() as pilot:
@@ -42,7 +31,7 @@ async def test_app_shows_empty_message(setup_scope_dir):
 
 
 @pytest.mark.asyncio
-async def test_app_displays_sessions(setup_scope_dir):
+async def test_app_displays_sessions(mock_scope_base):
     """Test that app displays sessions."""
     # Create a session
     session = Session(
@@ -63,7 +52,7 @@ async def test_app_displays_sessions(setup_scope_dir):
 
 
 @pytest.mark.asyncio
-async def test_app_quit_binding(setup_scope_dir):
+async def test_app_quit_binding(mock_scope_base):
     """Test that q quits the app."""
     app = ScopeApp()
     async with app.run_test() as pilot:
@@ -73,7 +62,7 @@ async def test_app_quit_binding(setup_scope_dir):
 
 
 @pytest.mark.asyncio
-async def test_app_shows_running_count(setup_scope_dir):
+async def test_app_shows_running_count(mock_scope_base):
     """Test that subtitle shows running count."""
     # Create sessions with different states
     running = Session(
@@ -101,7 +90,7 @@ async def test_app_shows_running_count(setup_scope_dir):
 
 
 @pytest.mark.asyncio
-async def test_session_table_shows_pending_task(setup_scope_dir):
+async def test_session_table_shows_pending_task(mock_scope_base):
     """Test that empty task shows (pending...)."""
     session = Session(
         id="0",
@@ -122,7 +111,7 @@ async def test_session_table_shows_pending_task(setup_scope_dir):
 
 
 @pytest.mark.asyncio
-async def test_session_table_shows_activity(setup_scope_dir, tmp_path):
+async def test_session_table_shows_activity(mock_scope_base):
     """Test that activity is displayed."""
     session = Session(
         id="0",
@@ -135,7 +124,7 @@ async def test_session_table_shows_activity(setup_scope_dir, tmp_path):
     save_session(session)
 
     # Write activity file
-    activity_file = tmp_path / ".scope" / "sessions" / "0" / "activity"
+    activity_file = mock_scope_base / "sessions" / "0" / "activity"
     activity_file.write_text("editing main.py")
 
     app = ScopeApp()
@@ -146,7 +135,7 @@ async def test_session_table_shows_activity(setup_scope_dir, tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_session_table_truncates_long_task(setup_scope_dir):
+async def test_session_table_truncates_long_task(mock_scope_base):
     """Test that long tasks are truncated."""
     long_task = "This is a very long task description that should be truncated"
     session = Session(
@@ -168,7 +157,7 @@ async def test_session_table_truncates_long_task(setup_scope_dir):
 
 
 @pytest.mark.asyncio
-async def test_new_session_outside_tmux_shows_notification(setup_scope_dir):
+async def test_new_session_outside_tmux_shows_notification(mock_scope_base):
     """Test that pressing n outside tmux shows error notification."""
     app = ScopeApp()
     async with app.run_test() as pilot:
@@ -182,7 +171,7 @@ async def test_new_session_outside_tmux_shows_notification(setup_scope_dir):
 
 
 @pytest.mark.asyncio
-async def test_new_session_creates_session(setup_scope_dir):
+async def test_new_session_creates_session(mock_scope_base):
     """Test that pressing n creates a new session when in tmux."""
     app = ScopeApp()
     async with app.run_test() as pilot:
@@ -214,7 +203,7 @@ async def test_new_session_creates_session(setup_scope_dir):
 
 
 @pytest.mark.asyncio
-async def test_new_session_appears_in_table(setup_scope_dir):
+async def test_new_session_appears_in_table(mock_scope_base):
     """Test that new session appears in table after creation."""
     app = ScopeApp()
     async with app.run_test() as pilot:
@@ -457,7 +446,7 @@ def test_build_tree_hide_done():
 
 
 @pytest.mark.asyncio
-async def test_session_table_shows_nested_sessions(setup_scope_dir):
+async def test_session_table_shows_nested_sessions(mock_scope_base):
     """Test that nested sessions are displayed with indentation."""
     parent = Session(
         id="0",

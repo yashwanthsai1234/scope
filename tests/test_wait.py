@@ -32,20 +32,16 @@ def test_wait_no_args(runner):
     assert "Missing argument" in result.output
 
 
-def test_wait_session_not_found(runner, tmp_path, monkeypatch):
+def test_wait_session_not_found(runner, mock_scope_base):
     """Test wait with non-existent session returns error."""
-    monkeypatch.chdir(tmp_path)
-
     result = runner.invoke(main, ["wait", "999"])
 
     assert result.exit_code == 1
     assert "Session 999 not found" in result.output
 
 
-def test_wait_already_done(runner, tmp_path, monkeypatch):
+def test_wait_already_done(runner, mock_scope_base):
     """Test wait returns immediately if session already done."""
-    monkeypatch.chdir(tmp_path)
-
     session = Session(
         id="0",
         task="Test task",
@@ -62,10 +58,8 @@ def test_wait_already_done(runner, tmp_path, monkeypatch):
     assert result.output == ""  # No result file
 
 
-def test_wait_already_aborted(runner, tmp_path, monkeypatch):
+def test_wait_already_aborted(runner, mock_scope_base):
     """Test wait returns immediately if session already aborted."""
-    monkeypatch.chdir(tmp_path)
-
     session = Session(
         id="0",
         task="Test task",
@@ -81,10 +75,8 @@ def test_wait_already_aborted(runner, tmp_path, monkeypatch):
     assert result.exit_code == 2  # Aborted exit code
 
 
-def test_wait_with_result(runner, tmp_path, monkeypatch):
+def test_wait_with_result(runner, mock_scope_base):
     """Test wait outputs result file content."""
-    monkeypatch.chdir(tmp_path)
-
     session = Session(
         id="0",
         task="Test task",
@@ -96,7 +88,7 @@ def test_wait_with_result(runner, tmp_path, monkeypatch):
     save_session(session)
 
     # Write result file
-    result_file = tmp_path / ".scope" / "sessions" / "0" / "result"
+    result_file = mock_scope_base / "sessions" / "0" / "result"
     result_file.write_text("Task completed successfully.")
 
     result = runner.invoke(main, ["wait", "0"])
@@ -105,10 +97,8 @@ def test_wait_with_result(runner, tmp_path, monkeypatch):
     assert result.output == "Task completed successfully."
 
 
-def test_wait_blocks_until_done(runner, tmp_path, monkeypatch):
+def test_wait_blocks_until_done(runner, mock_scope_base):
     """Test wait blocks until session state changes to done."""
-    monkeypatch.chdir(tmp_path)
-
     session = Session(
         id="0",
         task="Test task",
@@ -134,10 +124,8 @@ def test_wait_blocks_until_done(runner, tmp_path, monkeypatch):
     assert result.exit_code == 0
 
 
-def test_wait_child_session(runner, tmp_path, monkeypatch):
+def test_wait_child_session(runner, mock_scope_base):
     """Test wait works with child session IDs."""
-    monkeypatch.chdir(tmp_path)
-
     session = Session(
         id="0.1",
         task="Child task",
@@ -153,10 +141,8 @@ def test_wait_child_session(runner, tmp_path, monkeypatch):
     assert result.exit_code == 0
 
 
-def test_wait_multiple_sessions(runner, tmp_path, monkeypatch):
+def test_wait_multiple_sessions(runner, mock_scope_base):
     """Test wait works with multiple session IDs."""
-    monkeypatch.chdir(tmp_path)
-
     for i in range(3):
         session = Session(
             id=str(i),
@@ -167,7 +153,7 @@ def test_wait_multiple_sessions(runner, tmp_path, monkeypatch):
             created_at=datetime.now(timezone.utc),
         )
         save_session(session)
-        result_file = tmp_path / ".scope" / "sessions" / str(i) / "result"
+        result_file = mock_scope_base / "sessions" / str(i) / "result"
         result_file.write_text(f"Result {i}")
 
     result = runner.invoke(main, ["wait", "0", "1", "2"])
@@ -181,10 +167,8 @@ def test_wait_multiple_sessions(runner, tmp_path, monkeypatch):
     assert "Result 2" in result.output
 
 
-def test_wait_multiple_one_aborted(runner, tmp_path, monkeypatch):
+def test_wait_multiple_one_aborted(runner, mock_scope_base):
     """Test wait exits 2 if any session aborted."""
-    monkeypatch.chdir(tmp_path)
-
     session0 = Session(
         id="0",
         task="Task 0",
@@ -210,10 +194,8 @@ def test_wait_multiple_one_aborted(runner, tmp_path, monkeypatch):
     assert result.exit_code == 2
 
 
-def test_wait_multiple_blocks_until_all_done(runner, tmp_path, monkeypatch):
+def test_wait_multiple_blocks_until_all_done(runner, mock_scope_base):
     """Test wait blocks until all sessions complete."""
-    monkeypatch.chdir(tmp_path)
-
     # Create two running sessions
     for i in range(2):
         session = Session(

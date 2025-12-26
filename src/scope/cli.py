@@ -8,7 +8,6 @@ Usage:
 """
 
 import os
-import uuid
 
 import click
 
@@ -47,22 +46,15 @@ def main(ctx: click.Context, inside_tmux: bool, dangerously_skip_permissions: bo
     if ctx.invoked_subcommand is not None:
         return
 
-    # Generate unique instance ID for this TUI session if not already set
-    # This ensures multiple scope instances don't conflict
-    instance_id = os.environ.get("SCOPE_INSTANCE_ID", "")
-    if not instance_id:
-        instance_id = str(uuid.uuid4())[:8]
-        os.environ["SCOPE_INSTANCE_ID"] = instance_id
-
     # No subcommand - launch the TUI
     if not in_tmux():
         # Not in tmux - launch tmux with scope inside
         # Use -A to attach if session exists, or create if it doesn't
         # Build command with env vars prefixed (tmux doesn't inherit parent env reliably)
-        scope_cmd = f"SCOPE_INSTANCE_ID={instance_id}"
+        scope_cmd = ""
         if dangerously_skip_permissions:
-            scope_cmd += " SCOPE_DANGEROUSLY_SKIP_PERMISSIONS=1"
-        scope_cmd += " scope --inside-tmux"
+            scope_cmd = "SCOPE_DANGEROUSLY_SKIP_PERMISSIONS=1 "
+        scope_cmd += "scope --inside-tmux"
         if dangerously_skip_permissions:
             scope_cmd += " --dangerously-skip-permissions"
 

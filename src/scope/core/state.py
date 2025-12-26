@@ -1,51 +1,68 @@
 """State management for scope sessions.
 
-All session data is stored in .scope/instances/{instance_id}/sessions/{id}/ with individual files:
+All session data is stored in ~/.scope/repos/{dirname}-{hash}/sessions/{id}/ with individual files:
 - task: One-line task description
 - state: Current state (running, done, aborted)
 - parent: Parent session ID (empty for root)
 - tmux: tmux session name
 - created_at: ISO format timestamp
 
-Each scope TUI instance gets its own unique instance_id (UUID) to avoid conflicts.
+Sessions are scoped by git repository root (or cwd if not in a git repo).
 """
 
-import os
+import fcntl
+import hashlib
+import subprocess
 from datetime import datetime
 from pathlib import Path
 
 from scope.core.session import Session
 
 
-def get_instance_id() -> str:
-    """Get the current scope instance ID.
-
-    Returns the instance ID from SCOPE_INSTANCE_ID environment variable.
-    If not set, returns empty string (for backwards compatibility or CLI usage).
+def get_root_path() -> Path:
+    """Get the root path for scope storage (git root or cwd).
 
     Returns:
-        Instance ID string or empty string.
+        Git repository root if in a git repo, otherwise current working directory.
     """
-    return os.environ.get("SCOPE_INSTANCE_ID", "")
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return Path(result.stdout.strip())
+    except subprocess.CalledProcessError:
+        return Path.cwd()
+
+
+def get_global_scope_base() -> Path:
+    """Get the global scope directory for current project.
+
+    Returns ~/.scope/repos/{dirname}-{hash}/ where:
+    - dirname is the basename of the git root (or cwd)
+    - hash is first 8 chars of sha256 of the full path
+
+    Returns:
+        Path to the global scope directory for this project.
+    """
+    root_path = get_root_path()
+    dir_name = root_path.name
+    path_hash = hashlib.sha256(str(root_path).encode()).hexdigest()[:8]
+    identifier = f"{dir_name}-{path_hash}"
+    return Path.home() / ".scope" / "repos" / identifier
 
 
 def ensure_scope_dir() -> Path:
-    """Ensure scope directory exists for the current instance.
+    """Ensure scope directory exists.
 
-    If SCOPE_INSTANCE_ID is set, creates .scope/instances/{id}/sessions/.
-    Otherwise creates .scope/sessions/ (backwards compatible).
+    Creates ~/.scope/repos/{identifier}/sessions/ if it doesn't exist.
 
     Returns:
-        Path to scope directory (either .scope/ or .scope/instances/{id}/).
+        Path to scope directory.
     """
-    base_dir = Path.cwd() / ".scope"
-    instance_id = get_instance_id()
-
-    if instance_id:
-        scope_dir = base_dir / "instances" / instance_id
-    else:
-        scope_dir = base_dir
-
+    scope_dir = get_global_scope_base()
     sessions_dir = scope_dir / "sessions"
     sessions_dir.mkdir(parents=True, exist_ok=True)
     return scope_dir
@@ -61,12 +78,20 @@ def _get_session_dir(scope_dir: Path, session_id: str) -> Path:
     return scope_dir / "sessions" / session_id
 
 
+def _get_lock_path(scope_dir: Path) -> Path:
+    """Get path to the lock file for atomic ID generation."""
+    return scope_dir / "next_id.lock"
+
+
 def next_id(parent: str = "") -> str:
     """Get the next available session ID.
 
     ID format:
     - Root sessions: "0", "1", "2", ...
     - Child sessions: "{parent}.0", "{parent}.1", ...
+
+    Uses file locking to prevent race conditions when multiple processes
+    call next_id() concurrently.
 
     Args:
         parent: Parent session ID. Empty string for root sessions.
@@ -75,40 +100,47 @@ def next_id(parent: str = "") -> str:
         The next available session ID.
     """
     scope_dir = ensure_scope_dir()
+    lock_path = _get_lock_path(scope_dir)
 
-    if parent:
-        # Child session: find next child index for this parent
-        sessions_dir = scope_dir / "sessions"
-        prefix = f"{parent}."
-        max_child = -1
+    # Use file locking to make the read-modify-write atomic
+    with open(lock_path, "w") as lock_file:
+        fcntl.flock(lock_file, fcntl.LOCK_EX)
+        try:
+            if parent:
+                # Child session: find next child index for this parent
+                sessions_dir = scope_dir / "sessions"
+                prefix = f"{parent}."
+                max_child = -1
 
-        if sessions_dir.exists():
-            for session_dir in sessions_dir.iterdir():
-                if session_dir.is_dir() and session_dir.name.startswith(prefix):
-                    # Extract child index: "0.1.2" with parent "0.1" -> "2"
-                    suffix = session_dir.name[len(prefix) :]
-                    # Only consider direct children (no dots in suffix)
-                    if "." not in suffix:
-                        try:
-                            child_idx = int(suffix)
-                            max_child = max(max_child, child_idx)
-                        except ValueError:
-                            pass
+                if sessions_dir.exists():
+                    for session_dir in sessions_dir.iterdir():
+                        if session_dir.is_dir() and session_dir.name.startswith(prefix):
+                            # Extract child index: "0.1.2" with parent "0.1" -> "2"
+                            suffix = session_dir.name[len(prefix) :]
+                            # Only consider direct children (no dots in suffix)
+                            if "." not in suffix:
+                                try:
+                                    child_idx = int(suffix)
+                                    max_child = max(max_child, child_idx)
+                                except ValueError:
+                                    pass
 
-        return f"{parent}.{max_child + 1}"
-    else:
-        # Root session: use global counter
-        next_id_path = _get_next_id_path(scope_dir)
+                return f"{parent}.{max_child + 1}"
+            else:
+                # Root session: use global counter
+                next_id_path = _get_next_id_path(scope_dir)
 
-        if next_id_path.exists():
-            current = int(next_id_path.read_text().strip())
-        else:
-            current = 0
+                if next_id_path.exists():
+                    current = int(next_id_path.read_text().strip())
+                else:
+                    current = 0
 
-        # Increment and save
-        next_id_path.write_text(str(current + 1))
+                # Increment and save
+                next_id_path.write_text(str(current + 1))
 
-        return str(current)
+                return str(current)
+        finally:
+            fcntl.flock(lock_file, fcntl.LOCK_UN)
 
 
 def save_session(session: Session) -> None:
@@ -137,20 +169,12 @@ def save_session(session: Session) -> None:
 
 
 def _get_scope_dir() -> Path:
-    """Get the scope directory for the current instance.
-
-    Returns the instance-specific directory if SCOPE_INSTANCE_ID is set,
-    otherwise returns .scope/ directly.
+    """Get the scope directory.
 
     Returns:
         Path to scope directory.
     """
-    base_dir = Path.cwd() / ".scope"
-    instance_id = get_instance_id()
-
-    if instance_id:
-        return base_dir / "instances" / instance_id
-    return base_dir
+    return get_global_scope_base()
 
 
 def load_session(session_id: str) -> Session | None:

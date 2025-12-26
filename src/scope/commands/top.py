@@ -1,7 +1,6 @@
 """Top command - launch the scope TUI."""
 
 import os
-import uuid
 
 import click
 
@@ -27,12 +26,11 @@ def top(dangerously_skip_permissions: bool) -> None:
             # Attach to existing scope session
             os.execvp("tmux", ["tmux", "attach-session", "-t", "scope"])
         else:
-            # Generate instance ID and build command with env vars
-            instance_id = os.environ.get("SCOPE_INSTANCE_ID", "") or str(uuid.uuid4())[:8]
-            scope_cmd = f"SCOPE_INSTANCE_ID={instance_id}"
+            # Build command with env vars
+            scope_cmd = ""
             if dangerously_skip_permissions:
-                scope_cmd += " SCOPE_DANGEROUSLY_SKIP_PERMISSIONS=1"
-            scope_cmd += " scope top"
+                scope_cmd = "SCOPE_DANGEROUSLY_SKIP_PERMISSIONS=1 "
+            scope_cmd += "scope top"
             if dangerously_skip_permissions:
                 scope_cmd += " --dangerously-skip-permissions"
 

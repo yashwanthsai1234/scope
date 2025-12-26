@@ -1,7 +1,6 @@
 """Main Textual app for scope TUI."""
 
 import asyncio
-import os
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -12,6 +11,7 @@ from scope.core.session import Session
 from scope.core.state import (
     delete_session,
     ensure_scope_dir,
+    get_global_scope_base,
     load_all,
     next_id,
     save_session,
@@ -19,13 +19,13 @@ from scope.core.state import (
 from scope.core.tmux import (
     TmuxError,
     attach_in_split,
-    create_session,
-    detach_to_session,
+    create_window,
+    detach_to_window,
     enable_mouse,
-    has_session,
+    has_window,
     in_tmux,
-    kill_session,
-    tmux_session_name,
+    kill_window,
+    tmux_window_name,
 )
 from scope.tui.widgets.session_tree import SessionTable
 
@@ -49,7 +49,7 @@ class ScopeApp(App):
 
     # Track currently attached pane for detach functionality
     _attached_pane_id: str | None = None
-    _attached_session_name: str | None = None
+    _attached_window_name: str | None = None
     # Filter state
     _hide_done: bool = False
     CSS = """
@@ -69,9 +69,6 @@ class ScopeApp(App):
         super().__init__()
         self._watcher_task: asyncio.Task | None = None
         self._dangerously_skip_permissions = dangerously_skip_permissions
-
-        # Use instance ID from environment (set by CLI entry point)
-        self._instance_id = os.environ.get("SCOPE_INSTANCE_ID", "")
 
     def compose(self) -> ComposeResult:
         """Compose the app layout."""
@@ -127,21 +124,21 @@ class ScopeApp(App):
         if self._attached_pane_id:
             self.action_detach()
 
-        scope_dir = ensure_scope_dir()
+        ensure_scope_dir()
         session_id = next_id("")
-        tmux_name = tmux_session_name(session_id)
+        window_name = tmux_window_name(session_id)
 
         session = Session(
             id=session_id,
             task="",  # Will be inferred from first user message via hooks
             parent="",
             state="running",
-            tmux_session=tmux_name,
+            tmux_session=window_name,  # Store window name (kept as tmux_session for compat)
             created_at=datetime.now(timezone.utc),
         )
         save_session(session)
 
-        # Create independent tmux session with Claude Code
+        # Create tmux window with Claude Code
         try:
             command = "claude"
             if self._dangerously_skip_permissions:
@@ -149,21 +146,19 @@ class ScopeApp(App):
 
             # Build environment for spawned session
             env = {"SCOPE_SESSION_ID": session_id}
-            if self._instance_id:
-                env["SCOPE_INSTANCE_ID"] = self._instance_id
             if self._dangerously_skip_permissions:
                 env["SCOPE_DANGEROUSLY_SKIP_PERMISSIONS"] = "1"
 
-            create_session(
-                name=tmux_name,
+            create_window(
+                name=window_name,
                 command=command,
                 cwd=Path.cwd(),  # Project root
                 env=env,
             )
-            # Join the pane into current window (no nesting)
-            pane_id = attach_in_split(tmux_name)
+            # Join the pane into current window
+            pane_id = attach_in_split(window_name)
             self._attached_pane_id = pane_id
-            self._attached_session_name = tmux_name
+            self._attached_window_name = window_name
         except TmuxError as e:
             self.notify(f"Failed to create session: {e}", severity="error")
 
@@ -180,33 +175,33 @@ class ScopeApp(App):
 
         # Get the session ID from the row key
         session_id = str(event.row_key.value)
-        tmux_name = tmux_session_name(session_id)
+        window_name = tmux_window_name(session_id)
 
-        # Check if session exists
-        if not has_session(tmux_name):
+        # Check if window exists
+        if not has_window(window_name):
             self.notify(f"Session {session_id} not found", severity="error")
             return
 
-        # Join the pane into current window (no nesting)
+        # Join the pane into current window
         try:
-            pane_id = attach_in_split(tmux_name)
+            pane_id = attach_in_split(window_name)
             self._attached_pane_id = pane_id
-            self._attached_session_name = tmux_name
+            self._attached_window_name = window_name
         except TmuxError as e:
             self.notify(f"Failed to attach: {e}", severity="error")
 
     def action_detach(self) -> None:
-        """Detach the currently attached pane back to its own session."""
-        if not self._attached_pane_id or not self._attached_session_name:
+        """Detach the currently attached pane back to its own window."""
+        if not self._attached_pane_id or not self._attached_window_name:
             return
 
         try:
-            detach_to_session(self._attached_pane_id, self._attached_session_name)
+            detach_to_window(self._attached_pane_id, self._attached_window_name)
         except TmuxError:
             pass  # Pane might already be gone
         finally:
             self._attached_pane_id = None
-            self._attached_session_name = None
+            self._attached_window_name = None
 
     def action_abort_session(self) -> None:
         """Abort the currently selected session."""
@@ -227,21 +222,21 @@ class ScopeApp(App):
         session_id = row_key[0]  # First column is ID (may be indented)
         # Remove indentation and tree indicators (▶▼)
         session_id = session_id.lstrip("▶▼ ").strip()
-        tmux_name = tmux_session_name(session_id)
+        window_name = tmux_window_name(session_id)
 
         # If this session is currently attached, kill the pane first
-        if self._attached_session_name == tmux_name and self._attached_pane_id:
+        if self._attached_window_name == window_name and self._attached_pane_id:
             subprocess.run(
                 ["tmux", "kill-pane", "-t", self._attached_pane_id],
                 capture_output=True,
             )
             self._attached_pane_id = None
-            self._attached_session_name = None
+            self._attached_window_name = None
 
-        # Kill tmux session if it exists
-        if has_session(tmux_name):
+        # Kill tmux window if it exists
+        if has_window(window_name):
             try:
-                kill_session(tmux_name)
+                kill_window(window_name)
             except TmuxError as e:
                 self.notify(f"Warning: {e}", severity="warning")
 
@@ -264,17 +259,17 @@ class ScopeApp(App):
         self.refresh_sessions()
 
     async def _watch_sessions(self) -> None:
-        """Watch .scope/ for changes and refresh."""
+        """Watch scope directory for changes and refresh."""
         from watchfiles import awatch
 
-        scope_dir = Path.cwd() / ".scope"
+        scope_dir = get_global_scope_base()
 
         # Ensure directory exists for watching
         scope_dir.mkdir(parents=True, exist_ok=True)
 
         try:
             async for changes in awatch(scope_dir):
-                # Check if .scope was deleted (watch will stop)
+                # Check if scope dir was deleted (watch will stop)
                 if not scope_dir.exists():
                     scope_dir.mkdir(parents=True, exist_ok=True)
                 self.refresh_sessions()

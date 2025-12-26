@@ -31,20 +31,16 @@ def test_poll_no_args(runner):
     assert "Missing argument" in result.output
 
 
-def test_poll_session_not_found(runner, tmp_path, monkeypatch):
+def test_poll_session_not_found(runner, mock_scope_base):
     """Test poll with non-existent session returns error."""
-    monkeypatch.chdir(tmp_path)
-
     result = runner.invoke(main, ["poll", "999"])
 
     assert result.exit_code == 1
     assert "Session 999 not found" in result.output
 
 
-def test_poll_running_session(runner, tmp_path, monkeypatch):
+def test_poll_running_session(runner, mock_scope_base):
     """Test poll returns status for running session."""
-    monkeypatch.chdir(tmp_path)
-
     session = Session(
         id="0",
         task="Test task",
@@ -62,10 +58,8 @@ def test_poll_running_session(runner, tmp_path, monkeypatch):
     assert data["status"] == "running"
 
 
-def test_poll_done_session(runner, tmp_path, monkeypatch):
+def test_poll_done_session(runner, mock_scope_base):
     """Test poll returns status for completed session."""
-    monkeypatch.chdir(tmp_path)
-
     session = Session(
         id="0",
         task="Test task",
@@ -83,10 +77,8 @@ def test_poll_done_session(runner, tmp_path, monkeypatch):
     assert data["status"] == "done"
 
 
-def test_poll_with_activity(runner, tmp_path, monkeypatch):
+def test_poll_with_activity(runner, mock_scope_base):
     """Test poll returns activity when present."""
-    monkeypatch.chdir(tmp_path)
-
     session = Session(
         id="0",
         task="Test task",
@@ -98,7 +90,7 @@ def test_poll_with_activity(runner, tmp_path, monkeypatch):
     save_session(session)
 
     # Write activity file
-    activity_file = tmp_path / ".scope" / "sessions" / "0" / "activity"
+    activity_file = mock_scope_base / "sessions" / "0" / "activity"
     activity_file.write_text("editing src/auth.ts")
 
     result = runner.invoke(main, ["poll", "0"])
@@ -109,10 +101,8 @@ def test_poll_with_activity(runner, tmp_path, monkeypatch):
     assert data["activity"] == "editing src/auth.ts"
 
 
-def test_poll_with_result(runner, tmp_path, monkeypatch):
+def test_poll_with_result(runner, mock_scope_base):
     """Test poll returns result when session is done."""
-    monkeypatch.chdir(tmp_path)
-
     session = Session(
         id="0",
         task="Test task",
@@ -124,7 +114,7 @@ def test_poll_with_result(runner, tmp_path, monkeypatch):
     save_session(session)
 
     # Write result file
-    result_file = tmp_path / ".scope" / "sessions" / "0" / "result"
+    result_file = mock_scope_base / "sessions" / "0" / "result"
     result_file.write_text("Completed successfully. Updated 3 files.")
 
     result = runner.invoke(main, ["poll", "0"])
@@ -135,10 +125,8 @@ def test_poll_with_result(runner, tmp_path, monkeypatch):
     assert data["result"] == "Completed successfully. Updated 3 files."
 
 
-def test_poll_child_session(runner, tmp_path, monkeypatch):
+def test_poll_child_session(runner, mock_scope_base):
     """Test poll works with child session IDs."""
-    monkeypatch.chdir(tmp_path)
-
     session = Session(
         id="0.1",
         task="Child task",
