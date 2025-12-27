@@ -1,26 +1,87 @@
 # scope
 
-**Spawn bounded, purpose-specific subagents. Preserve your context. Maintain visibility and control.**
+[![PyPI](https://img.shields.io/pypi/v/scopeai.svg)](https://pypi.org/project/scopeai/)
+[![Python](https://img.shields.io/pypi/pyversions/scopeai.svg)](https://pypi.org/project/scopeai/)
+[![License](https://img.shields.io/github/license/adagradschool/scope.svg)](https://github.com/adagradschool/scope/blob/main/LICENSE)
+[![CI](https://img.shields.io/github/actions/workflow/status/adagradschool/scope/ci.yml?branch=main)](https://github.com/adagradschool/scope/actions)
 
-scope is an agent management system for Claude Code. It lets you spawn subagents that are observable, interruptible, and steerable—without polluting your main context.
+**Your context is rotting. Scope fixes that.**
 
-## Installation
+Every task you give Claude Code accumulates context: file contents, failed attempts, exploratory tangents. When compaction kicks in, critical details vanish. Your main session becomes a diluted mess of half-remembered explorations.
 
-```bash
-# One-shot run (no install)
-uvx scope top
+**Scope solves this by spawning purpose-specific subagents.** Each subagent gets a fresh context, does one job, and returns only the relevant result. Your main session stays lean—you orchestrate and synthesize, not accumulate.
 
-# Or install globally
-uv tool install scope
+## The Problem
+
+```
+Main Session Context Over Time:
+
+Start:    [████████████████████████████████████████] 100% relevant
+After 3   [████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░] 20% relevant
+  tasks:  ↑ file reads, dead ends, tangents, old completions
+
+After     [██░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░] 5% relevant
+compaction: ↑ critical details lost in summarization
 ```
 
-Then run setup:
+This is **context rot**. The more you do in one session, the worse your context-to-relevance ratio becomes. Summarization doesn't help—it discards the wrong things.
+
+## The Solution
+
+```
+With Scope:
+
+Main:     [████████████████████████████████████████] orchestration + results only
+          ↓ spawn
+Subagent: [████████████████░░░░░░░░░░░░░░░░░░░░░░░░] does one job, returns summary
+          ↑ fresh context, focused task, clean result
+```
+
+Each subagent:
+- Starts with **fresh context** (no accumulated baggage)
+- Has a **single purpose** (no scope creep)
+- Returns **only what matters** (you get the result, not the journey)
+
+Your main session becomes a coordinator, not a garbage collector.
+
+## Quick Start
 
 ```bash
+# Install
+uv tool install scopeai
+
+# Or run directly without installing
+uvx scopeai top
+
+# Run setup (installs hooks, checks dependencies)
 scope setup
+
+# Launch the dashboard
+scope top
 ```
 
-This checks for `tmux`, installs Claude Code hooks, and configures documentation.
+That's it. Now from any Claude Code session:
+
+```bash
+# Spawn a subagent
+id=$(scope spawn "implement user authentication")
+
+# Wait for result
+scope wait $id
+```
+
+## Scope vs Task Tool
+
+| | Task Tool | Scope |
+|---|---|---|
+| **Visibility** | Opaque black box | Real-time dashboard |
+| **Intervention** | None—wait and hope | Attach, steer, abort anytime |
+| **Context** | Shares parent context | Fresh context per agent |
+| **Parallelism** | Sequential only | Spawn many in parallel |
+| **Nesting** | Limited | Unlimited hierarchy |
+| **Debugging** | Results only | Full session inspection |
+
+The Task tool is a blind subprocess. Scope gives you a **visible, controllable swarm**.
 
 ## Usage
 
@@ -69,6 +130,24 @@ scope wait $id
 # Returns: {"status": "done", "result": "..."}
 ```
 
+### DAG Orchestration
+
+Model complex tasks as a dependency graph:
+
+```bash
+# Declare the full DAG upfront
+scope spawn "research auth patterns" --id research
+scope spawn "audit current codebase" --id audit
+scope spawn "implement auth" --id impl --after research,audit
+scope spawn "write tests" --id tests --after impl
+scope spawn "update docs" --id docs --after impl
+
+# Wait only on leaf nodes—dependencies auto-resolve
+scope wait tests docs
+```
+
+### Nesting
+
 Subagents can spawn children. Nesting is automatic via `SCOPE_SESSION_ID`:
 
 ```bash
@@ -79,14 +158,27 @@ scope spawn "Extract JWT helpers"
 scope spawn "Parse token format"
 ```
 
-## Why scope?
+## Why Parallelism is a Bonus
 
-Claude Code is bottlenecked by context, not capability. Subagents help—but current implementations are opaque. When they drift, you can't see or intervene.
+Yes, scope lets you run tasks in parallel. But that's not why you should use it.
 
-scope makes subagents **transparent**:
-- See what every session is doing in real-time
-- Attach to any session and interact directly
-- Abort runaway tasks before they waste tokens
+You should use scope because **single-session context management is fundamentally broken**. Even if you only ever run one subagent at a time, you win:
+
+- Fresh context for each task
+- Clean results without journey baggage
+- Main session stays lean and relevant
+- No more losing critical details to compaction
+
+Parallelism just means you can do this faster.
+
+## How It Works
+
+- Each session is a real Claude Code process in tmux
+- State lives in `.scope/sessions/` (inspectable with standard Unix tools)
+- Hooks track activity automatically (no model self-reporting)
+- `scope top` watches for changes and updates instantly
+
+See [docs/02-architecture.md](docs/02-architecture.md) for technical details.
 
 ## Philosophy
 
@@ -96,15 +188,6 @@ scope makes subagents **transparent**:
 4. **Minimalism over ceremony** — One command to spawn, one interface to observe.
 
 See [docs/00-philosophy.md](docs/00-philosophy.md) for the full design philosophy.
-
-## How It Works
-
-- Each session is a real Claude Code process
-- State lives in `.scope/sessions/` (inspectable with standard Unix tools)
-- Hooks track activity automatically (no model self-reporting)
-- `scope top` watches for changes and updates instantly
-
-See [docs/02-architecture.md](docs/02-architecture.md) for technical details.
 
 ## Requirements
 

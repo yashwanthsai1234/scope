@@ -1,8 +1,37 @@
 [project]
-name = "scope"
+name = "scopeai"
 version = "0.1.0"
 description = "Subagent orchestration for Claude Code"
 readme = "README.md"
+license = "MIT"
+authors = [
+    { name = "ada" }
+]
+keywords = [
+    "claude",
+    "claude-code",
+    "subagent",
+    "orchestration",
+    "ai",
+    "llm",
+    "agent",
+    "automation",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Utilities",
+    "Typing :: Typed",
+]
 requires-python = ">=3.10"
 dependencies = [
     "textual>=0.50.0",
@@ -10,6 +39,11 @@ dependencies = [
     "orjson>=3.9.0",
     "watchfiles>=0.21.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/adagradschool/scope"
+Repository = "https://github.com/adagradschool/scope"
+Issues = "https://github.com/adagradschool/scope/issues"
 
 [project.scripts]
 scope = "scope.cli:main"
