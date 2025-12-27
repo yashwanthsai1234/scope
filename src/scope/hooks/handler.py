@@ -177,10 +177,23 @@ def summarize_task(prompt: str) -> str:
 
 @main.command()
 def task() -> None:
-    """Handle UserPromptSubmit hook - set task from first prompt."""
+    """Handle UserPromptSubmit hook - set task from first prompt and reactivate done sessions."""
     session_dir = get_session_dir()
     if session_dir is None:
         return
+
+    data = read_stdin_json()
+    prompt = data.get("prompt", "")
+
+    if not prompt:
+        return
+
+    # Transition done -> running when new prompt is submitted
+    state_file = session_dir / "state"
+    if state_file.exists():
+        current_state = state_file.read_text().strip()
+        if current_state == "done":
+            state_file.write_text("running")
 
     # Only set task if it's empty or contains placeholder
     task_file = session_dir / "task"
@@ -189,12 +202,6 @@ def task() -> None:
         if current_task and current_task != "(pending...)":
             # Task already set, don't overwrite
             return
-
-    data = read_stdin_json()
-    prompt = data.get("prompt", "")
-
-    if not prompt:
-        return
 
     summary = summarize_task(prompt)
     task_file.write_text(summary)

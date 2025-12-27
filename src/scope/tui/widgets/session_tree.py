@@ -75,11 +75,22 @@ class SessionTable(DataTable):
         self._collapsed: set[str] = set()
         self._sessions: list[Session] = []
         self._hide_done: bool = False
+        self._selected_session_id: str | None = None
 
     def on_mount(self) -> None:
         """Set up the table columns on mount."""
         self.add_columns("ID", "Task", "Status", "Activity")
         self.cursor_type = "row"
+
+    def watch_cursor_row(self, old_row: int | None, new_row: int | None) -> None:
+        """Track cursor changes to preserve selection across refreshes."""
+        if new_row is not None and self.row_count > 0:
+            try:
+                row_key = self.get_row_at(new_row)
+                if row_key is not None:
+                    self._selected_session_id = row_key.value
+            except Exception:
+                pass
 
     def toggle_collapse(self) -> None:
         """Toggle collapse state on currently selected session."""
@@ -117,15 +128,8 @@ class SessionTable(DataTable):
 
     def _render_sessions(self) -> None:
         """Render sessions to the table."""
-        # Save current selection before clearing
-        selected_session_id: str | None = None
-        if self.cursor_row is not None:
-            try:
-                row_key = self.get_row_at(self.cursor_row)
-                if row_key:
-                    selected_session_id = row_key.value
-            except Exception:
-                pass
+        # Use stored selection (tracked by watch_cursor_row)
+        selected_session_id = self._selected_session_id
 
         self.clear()
 
@@ -159,11 +163,22 @@ class SessionTable(DataTable):
 
         # Restore selection if the session still exists
         if selected_session_id is not None:
-            try:
-                row_index = self.get_row_index(selected_session_id)
-                self.move_cursor(row=row_index)
-            except Exception:
-                pass  # Session may have been removed
+            # Try the selected session, then walk up to parents
+            session_id = selected_session_id
+            while session_id:
+                try:
+                    row_index = self.get_row_index(session_id)
+                    self.move_cursor(row=row_index)
+                    self._selected_session_id = session_id
+                    break
+                except Exception:
+                    # Session not found, try parent (e.g., "0.1.2" -> "0.1" -> "0")
+                    if "." in session_id:
+                        session_id = session_id.rsplit(".", 1)[0]
+                    else:
+                        # No parent, clear stored selection
+                        self._selected_session_id = None
+                        break
 
     def _get_activity(self, session_id: str) -> str:
         """Get the current activity for a session.

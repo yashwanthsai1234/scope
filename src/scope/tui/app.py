@@ -89,12 +89,43 @@ class ScopeApp(App):
 
     async def on_unmount(self) -> None:
         """Called when the app is unmounted."""
+        # Cancel the watcher task first
         if self._watcher_task:
             self._watcher_task.cancel()
             try:
                 await self._watcher_task
             except asyncio.CancelledError:
                 pass
+
+        # Kill any attached pane first
+        if self._attached_pane_id:
+            try:
+                subprocess.run(
+                    _tmux_cmd(["kill-pane", "-t", self._attached_pane_id]),
+                    capture_output=True,
+                )
+            except Exception:
+                pass
+            self._attached_pane_id = None
+            self._attached_window_name = None
+
+        # Terminate all running sessions
+        sessions = load_all()
+        for session in sessions:
+            if session.state != "running":
+                continue
+            window_name = tmux_window_name(session.id)
+            # Kill tmux window if it exists
+            if has_window(window_name):
+                try:
+                    kill_window(window_name)
+                except TmuxError:
+                    pass  # Best effort
+            # Delete session from filesystem
+            try:
+                delete_session(session.id)
+            except FileNotFoundError:
+                pass  # Already gone
 
     def refresh_sessions(self) -> None:
         """Reload and display all sessions."""

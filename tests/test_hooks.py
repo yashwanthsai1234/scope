@@ -224,6 +224,54 @@ def test_task_hook_uses_summarizer(runner, setup_session, monkeypatch):
     assert "long prompt" in called_with[0]
 
 
+def test_task_hook_reactivates_done_session(runner, setup_session):
+    """Test task hook transitions done -> running when new prompt submitted.
+
+    Regression test: Sessions should transition from 'done' back to 'running'
+    when a new command/prompt is sent to them.
+    """
+    session_dir = setup_session
+    state_file = session_dir / "state"
+    task_file = session_dir / "task"
+
+    # Set session to done state (simulating completed session)
+    state_file.write_text("done")
+    task_file.write_text("Original task")
+
+    input_json = orjson.dumps({
+        "prompt": "A follow-up request"
+    }).decode()
+
+    result = runner.invoke(main, ["task"], input=input_json)
+
+    assert result.exit_code == 0
+    # State should transition from done to running
+    assert state_file.read_text() == "running"
+    # Task should remain unchanged (already set)
+    assert task_file.read_text() == "Original task"
+
+
+def test_task_hook_does_not_change_running_state(runner, setup_session):
+    """Test task hook does not modify state if already running."""
+    session_dir = setup_session
+    state_file = session_dir / "state"
+    task_file = session_dir / "task"
+
+    # Session is already running
+    state_file.write_text("running")
+    task_file.write_text("Current task")
+
+    input_json = orjson.dumps({
+        "prompt": "Another request"
+    }).decode()
+
+    result = runner.invoke(main, ["task"], input=input_json)
+
+    assert result.exit_code == 0
+    # State should remain running
+    assert state_file.read_text() == "running"
+
+
 def test_stop_hook_marks_done(runner, setup_session):
     """Test stop hook marks session as done."""
     session_dir = setup_session

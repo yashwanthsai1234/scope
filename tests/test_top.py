@@ -62,6 +62,54 @@ async def test_app_quit_binding(mock_scope_base):
 
 
 @pytest.mark.asyncio
+async def test_app_quit_terminates_running_sessions(mock_scope_base):
+    """Test that quitting the app terminates all running sessions."""
+    # Create a running session
+    running_session = Session(
+        id="0",
+        task="Running task",
+        parent="",
+        state="running",
+        tmux_session="w0",
+        created_at=datetime.now(timezone.utc),
+    )
+    # Create a done session (should not be affected)
+    done_session = Session(
+        id="1",
+        task="Done task",
+        parent="",
+        state="done",
+        tmux_session="w1",
+        created_at=datetime.now(timezone.utc),
+    )
+    save_session(running_session)
+    save_session(done_session)
+
+    # Verify both sessions exist
+    sessions = load_all()
+    assert len(sessions) == 2
+
+    # Mock tmux functions - must be applied for entire app lifecycle
+    # since on_unmount runs during app shutdown
+    with (
+        patch("scope.tui.app.has_window", return_value=True),
+        patch("scope.tui.app.kill_window") as mock_kill,
+    ):
+        app = ScopeApp()
+        async with app.run_test() as pilot:
+            await pilot.press("q")
+
+        # kill_window should have been called for the running session
+        mock_kill.assert_called_once_with("w0")
+
+    # Running session should be deleted, done session preserved
+    sessions = load_all()
+    assert len(sessions) == 1
+    assert sessions[0].id == "1"
+    assert sessions[0].state == "done"
+
+
+@pytest.mark.asyncio
 async def test_app_shows_running_count(mock_scope_base):
     """Test that subtitle shows running count."""
     # Create sessions with different states

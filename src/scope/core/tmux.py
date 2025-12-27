@@ -35,9 +35,14 @@ class TmuxError(Exception):
 def get_scope_session() -> str:
     """Get the tmux session name for scope.
 
-    Configurable via SCOPE_TMUX_SESSION env var, defaults to "scope".
+    Returns a project-specific session name based on git root (or cwd).
+    Configurable via SCOPE_TMUX_SESSION env var to override.
     """
-    return os.environ.get("SCOPE_TMUX_SESSION", "scope")
+    if env_session := os.environ.get("SCOPE_TMUX_SESSION"):
+        return env_session
+    from scope.core.project import get_project_identifier
+
+    return f"scope-{get_project_identifier()}"
 
 
 def is_installed() -> bool:

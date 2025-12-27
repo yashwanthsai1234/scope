@@ -11,47 +11,14 @@ Sessions are scoped by git repository root (or cwd if not in a git repo).
 """
 
 import fcntl
-import hashlib
-import subprocess
 from datetime import datetime
 from pathlib import Path
 
+from scope.core.project import get_global_scope_base, get_root_path
 from scope.core.session import Session
 
-
-def get_root_path() -> Path:
-    """Get the root path for scope storage (git root or cwd).
-
-    Returns:
-        Git repository root if in a git repo, otherwise current working directory.
-    """
-    try:
-        result = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        return Path(result.stdout.strip())
-    except subprocess.CalledProcessError:
-        return Path.cwd()
-
-
-def get_global_scope_base() -> Path:
-    """Get the global scope directory for current project.
-
-    Returns ~/.scope/repos/{dirname}-{hash}/ where:
-    - dirname is the basename of the git root (or cwd)
-    - hash is first 8 chars of sha256 of the full path
-
-    Returns:
-        Path to the global scope directory for this project.
-    """
-    root_path = get_root_path()
-    dir_name = root_path.name
-    path_hash = hashlib.sha256(str(root_path).encode()).hexdigest()[:8]
-    identifier = f"{dir_name}-{path_hash}"
-    return Path.home() / ".scope" / "repos" / identifier
+# Re-export for backwards compatibility
+__all__ = ["get_root_path", "get_global_scope_base"]
 
 
 def ensure_scope_dir() -> Path:
