@@ -1,8 +1,62 @@
 """Shared pytest fixtures for scope tests."""
 
+import os
 import subprocess
+import sys
 
 import pytest
+
+
+def _print_tmux_diagnostics() -> None:
+    """Print detailed tmux diagnostics for debugging CI failures."""
+    print("\n" + "=" * 60, file=sys.stderr)
+    print("TMUX DIAGNOSTICS", file=sys.stderr)
+    print("=" * 60, file=sys.stderr)
+
+    # Check environment
+    print(f"\nCI={os.environ.get('CI', 'not set')}", file=sys.stderr)
+    print(f"TERM={os.environ.get('TERM', 'not set')}", file=sys.stderr)
+    print(f"TMUX={os.environ.get('TMUX', 'not set')}", file=sys.stderr)
+    print(f"HOME={os.environ.get('HOME', 'not set')}", file=sys.stderr)
+
+    # Check tmux binary
+    which_result = subprocess.run(["which", "tmux"], capture_output=True, text=True)
+    print(
+        f"\nwhich tmux: {which_result.stdout.strip() or 'not found'}", file=sys.stderr
+    )
+
+    # Check tmux version
+    version_result = subprocess.run(["tmux", "-V"], capture_output=True, text=True)
+    if version_result.returncode == 0:
+        print(f"tmux version: {version_result.stdout.strip()}", file=sys.stderr)
+    else:
+        print(f"tmux -V failed: {version_result.stderr}", file=sys.stderr)
+
+    # Check if we can list sessions (this tests basic server connectivity)
+    list_result = subprocess.run(
+        ["tmux", "list-sessions"], capture_output=True, text=True
+    )
+    print(f"\ntmux list-sessions rc={list_result.returncode}", file=sys.stderr)
+    if list_result.stdout:
+        print(f"  stdout: {list_result.stdout.strip()}", file=sys.stderr)
+    if list_result.stderr:
+        print(f"  stderr: {list_result.stderr.strip()}", file=sys.stderr)
+
+    # Check /dev/tty access
+    try:
+        with open("/dev/tty", "r"):
+            print("\n/dev/tty: accessible", file=sys.stderr)
+    except OSError as e:
+        print(f"\n/dev/tty: {e}", file=sys.stderr)
+
+    # Check /dev/pts
+    if os.path.exists("/dev/pts"):
+        pts_contents = os.listdir("/dev/pts")
+        print(f"/dev/pts contents: {pts_contents}", file=sys.stderr)
+    else:
+        print("/dev/pts: does not exist", file=sys.stderr)
+
+    print("=" * 60 + "\n", file=sys.stderr)
 
 
 def tmux_works() -> bool:
@@ -18,8 +72,23 @@ def tmux_works() -> bool:
     result = subprocess.run(
         ["tmux", "-L", test_socket, "new-session", "-d", "-s", test_session],
         capture_output=True,
+        text=True,
     )
     if result.returncode != 0:
+        # Print diagnostics on failure
+        print(
+            f"\ntmux session creation failed (rc={result.returncode}):",
+            file=sys.stderr,
+        )
+        print(
+            f"  command: tmux -L {test_socket} new-session -d -s {test_session}",
+            file=sys.stderr,
+        )
+        if result.stdout:
+            print(f"  stdout: {result.stdout.strip()}", file=sys.stderr)
+        if result.stderr:
+            print(f"  stderr: {result.stderr.strip()}", file=sys.stderr)
+        _print_tmux_diagnostics()
         return False
 
     # Clean up
