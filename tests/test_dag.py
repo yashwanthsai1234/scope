@@ -13,7 +13,6 @@ from scope.core.state import (
     load_session,
     save_session,
 )
-from tests.conftest import requires_tmux
 
 
 @pytest.fixture
@@ -277,7 +276,6 @@ def _debug_spawn_result(result, label="SPAWN"):
         print(f"=== END {label} DEBUG ===\n", file=sys.stderr)
 
 
-@requires_tmux
 def test_spawn_after_creates_depends_on_file(runner, mock_scope_base, cleanup_scope_windows):
     """Test spawn --after creates depends_on file with correct IDs."""
     # First create a dependency session
@@ -304,7 +302,6 @@ def test_spawn_after_creates_depends_on_file(runner, mock_scope_base, cleanup_sc
     assert dep2_id in content
 
 
-@requires_tmux
 def test_spawn_after_by_alias(runner, mock_scope_base, cleanup_scope_windows):
     """Test spawn --after works with aliases."""
     # Create dependency with alias
@@ -323,7 +320,6 @@ def test_spawn_after_by_alias(runner, mock_scope_base, cleanup_scope_windows):
     assert depends_on_file.read_text() == dep_id
 
 
-@requires_tmux
 def test_spawn_after_by_numeric_id(runner, mock_scope_base, cleanup_scope_windows):
     """Test spawn --after works with numeric IDs."""
     # Create dependency
@@ -342,7 +338,6 @@ def test_spawn_after_by_numeric_id(runner, mock_scope_base, cleanup_scope_window
     assert depends_on_file.read_text() == dep_id
 
 
-@requires_tmux
 def test_spawn_after_dependency_not_found(runner, mock_scope_base, cleanup_scope_windows):
     """Test spawn --after errors when dependency doesn't exist."""
     result = runner.invoke(main, ["spawn", "--after", "nonexistent", "Some task"])
@@ -350,7 +345,6 @@ def test_spawn_after_dependency_not_found(runner, mock_scope_base, cleanup_scope
     assert "dependency 'nonexistent' not found" in result.output
 
 
-@requires_tmux
 def test_spawn_after_cycle_rejected(runner, mock_scope_base, cleanup_scope_windows):
     """Test spawn --after rejects cycles."""
     # Create A
@@ -382,7 +376,6 @@ def test_spawn_after_cycle_rejected(runner, mock_scope_base, cleanup_scope_windo
     # This CLI test verifies that --after parsing and basic validation work
 
 
-@requires_tmux
 def test_spawn_after_mixed_aliases_and_ids(runner, mock_scope_base, cleanup_scope_windows):
     """Test spawn --after works with mixed aliases and numeric IDs."""
     # Create first dep with alias

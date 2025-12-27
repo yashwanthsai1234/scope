@@ -14,7 +14,6 @@ from scope.core.state import (
     resolve_id,
     save_session,
 )
-from tests.conftest import requires_tmux
 
 
 @pytest.fixture
@@ -202,7 +201,6 @@ def test_resolve_id_prefers_numeric_id_over_alias(mock_scope_base):
 # --- CLI tests for spawn --id ---
 
 
-@requires_tmux
 def test_spawn_with_id_creates_alias_file(runner, mock_scope_base, cleanup_scope_windows):
     """Test spawn --id creates alias file."""
     result = runner.invoke(main, ["spawn", "--id", "foo", "Test task"])
@@ -227,7 +225,6 @@ def test_spawn_with_id_creates_alias_file(runner, mock_scope_base, cleanup_scope
     assert alias_file.read_text() == "foo"
 
 
-@requires_tmux
 def test_spawn_duplicate_alias_rejected(runner, mock_scope_base, cleanup_scope_windows):
     """Test spawn rejects duplicate alias."""
     # First spawn with alias
