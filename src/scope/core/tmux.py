@@ -230,15 +230,17 @@ def create_session(
         full_command = command
 
     # tmux new-session -d -s {name} -c {cwd} "{command}"
-    cmd = _tmux_cmd([
-        "new-session",
-        "-d",  # Detached
-        "-s",
-        name,  # Session name
-        "-c",
-        str(cwd),  # Working directory
-        full_command,
-    ])
+    cmd = _tmux_cmd(
+        [
+            "new-session",
+            "-d",  # Detached
+            "-s",
+            name,  # Session name
+            "-c",
+            str(cwd),  # Working directory
+            full_command,
+        ]
+    )
 
     result = subprocess.run(
         cmd,
@@ -362,13 +364,15 @@ def split_window(
     else:
         full_command = command
 
-    cmd = _tmux_cmd([
-        "split-window",
-        "-h",  # Horizontal split
-        "-c",
-        str(cwd),  # Working directory
-        full_command,
-    ])
+    cmd = _tmux_cmd(
+        [
+            "split-window",
+            "-h",  # Horizontal split
+            "-c",
+            str(cwd),  # Working directory
+            full_command,
+        ]
+    )
 
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
@@ -412,17 +416,19 @@ def create_window(
     else:
         target = current
 
-    cmd = _tmux_cmd([
-        "new-window",
-        "-d",  # Don't switch to the new window
-        "-t",
-        target,
-        "-n",
-        name,  # Window name
-        "-c",
-        str(cwd),
-        full_command,
-    ])
+    cmd = _tmux_cmd(
+        [
+            "new-window",
+            "-d",  # Don't switch to the new window
+            "-t",
+            target,
+            "-n",
+            name,  # Window name
+            "-c",
+            str(cwd),
+            full_command,
+        ]
+    )
 
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:

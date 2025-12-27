@@ -113,9 +113,7 @@ class SessionTable(DataTable):
         # Re-render with updated collapse state
         self._render_sessions()
 
-    def update_sessions(
-        self, sessions: list[Session], hide_done: bool = False
-    ) -> None:
+    def update_sessions(self, sessions: list[Session], hide_done: bool = False) -> None:
         """Update the table with the given sessions.
 
         Args:

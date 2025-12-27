@@ -8,7 +8,12 @@ from pathlib import Path
 import click
 from watchfiles import watch
 
-from scope.core.state import ensure_scope_dir, get_failed_reason, load_session, resolve_id
+from scope.core.state import (
+    ensure_scope_dir,
+    get_failed_reason,
+    load_session,
+    resolve_id,
+)
 
 
 TERMINAL_STATES = {"done", "aborted", "failed"}

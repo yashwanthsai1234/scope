@@ -83,7 +83,10 @@ def spawn(
     if alias:
         existing = load_session_by_alias(alias)
         if existing is not None:
-            click.echo(f"Error: alias '{alias}' already exists (session {existing.id})", err=True)
+            click.echo(
+                f"Error: alias '{alias}' already exists (session {existing.id})",
+                err=True,
+            )
             raise SystemExit(1)
 
     # Parse and resolve dependencies
@@ -128,7 +131,9 @@ def spawn(
 
     # Generate and save contract
     scope_dir = ensure_scope_dir()
-    contract = generate_contract(prompt=prompt, depends_on=depends_on if depends_on else None)
+    contract = generate_contract(
+        prompt=prompt, depends_on=depends_on if depends_on else None
+    )
     session_dir = scope_dir / "sessions" / session_id
     (session_dir / "contract.md").write_text(contract)
 

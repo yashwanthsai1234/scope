@@ -30,7 +30,9 @@ from scope.core.tmux import in_tmux
 )
 @click.version_option()
 @click.pass_context
-def main(ctx: click.Context, inside_tmux: bool, dangerously_skip_permissions: bool) -> None:
+def main(
+    ctx: click.Context, inside_tmux: bool, dangerously_skip_permissions: bool
+) -> None:
     """Scope - Subagent orchestration for Claude Code.
 
     Spawn bounded, purpose-specific subagents. Preserve your context.

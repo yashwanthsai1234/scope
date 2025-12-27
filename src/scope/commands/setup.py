@@ -38,7 +38,9 @@ def setup() -> None:
         if system == "Darwin":
             click.echo("Install with: brew install tmux", err=True)
         elif system == "Linux":
-            click.echo("Install with: apt install tmux (or your package manager)", err=True)
+            click.echo(
+                "Install with: apt install tmux (or your package manager)", err=True
+            )
         else:
             click.echo("Please install tmux to continue.", err=True)
         raise SystemExit(1)
