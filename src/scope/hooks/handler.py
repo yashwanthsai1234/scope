@@ -123,7 +123,12 @@ def activity() -> None:
 
     activity_str = infer_activity(tool_name, tool_input)
     activity_file = session_dir / "activity"
-    activity_file.write_text(activity_str)
+    if activity_file.exists():
+        existing = activity_file.read_text()
+        prefix = "" if existing.endswith("\n") or not existing else "\n"
+        activity_file.write_text(f"{existing}{prefix}{activity_str}")
+    else:
+        activity_file.write_text(activity_str)
 
 
 def summarize_task(prompt: str) -> str:
@@ -268,11 +273,6 @@ def stop() -> None:
     # Update state to done
     state_file = session_dir / "state"
     state_file.write_text("done")
-
-    # Clear activity
-    activity_file = session_dir / "activity"
-    if activity_file.exists():
-        activity_file.write_text("")
 
 
 @main.command("pane-died")

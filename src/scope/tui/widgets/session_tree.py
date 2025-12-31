@@ -160,7 +160,7 @@ class SessionTable(DataTable):
                 task = task[:37] + "..."
 
             # Get activity from session directory if it exists
-            activity = self._get_activity(session.id)
+            activity = self._get_activity(session.id, session.state)
 
             # Add indentation and tree indicator for nested sessions
             indent = "  " * depth
@@ -197,11 +197,12 @@ class SessionTable(DataTable):
                         self._selected_session_id = None
                         break
 
-    def _get_activity(self, session_id: str) -> str:
+    def _get_activity(self, session_id: str, session_state: str) -> str:
         """Get the current activity for a session.
 
         Args:
             session_id: The session ID.
+            session_state: The session state.
 
         Returns:
             Activity string or "-" if none.
@@ -211,10 +212,36 @@ class SessionTable(DataTable):
         scope_dir = ensure_scope_dir()
         activity_file = scope_dir / "sessions" / session_id / "activity"
         if activity_file.exists():
-            activity = activity_file.read_text().strip()
+            activity = ""
+            for line in activity_file.read_text().splitlines():
+                if line.strip():
+                    activity = line.strip()
             if activity:
+                if session_state in {"done", "aborted", "exited"}:
+                    activity = _past_tense_activity(activity)
                 # Truncate long activity
                 if len(activity) > 30:
                     return activity[:27] + "..."
                 return activity
         return "-"
+
+
+def _past_tense_activity(activity: str) -> str:
+    """Convert present-tense activity to past tense for done sessions."""
+    conversions = {
+        "reading ": "read ",
+        "editing ": "edited ",
+        "running: ": "ran: ",
+        "searching: ": "searched: ",
+        "spawning subtask": "spawned subtask",
+        "finding: ": "found: ",
+        "reading file": "read file",
+        "editing file": "edited file",
+        "running command": "ran command",
+        "searching": "searched",
+        "finding files": "found files",
+    }
+    for prefix, replacement in conversions.items():
+        if activity.startswith(prefix):
+            return replacement + activity[len(prefix) :]
+    return activity
