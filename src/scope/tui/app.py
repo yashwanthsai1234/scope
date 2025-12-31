@@ -28,6 +28,7 @@ from scope.core.tmux import (
     detach_to_window,
     enable_mouse,
     get_current_session,
+    get_current_pane_id,
     get_scope_session,
     has_window,
     in_tmux,
@@ -37,6 +38,7 @@ from scope.core.tmux import (
     rename_current_window,
     set_current_window_option,
     set_pane_option,
+    select_pane,
     tmux_window_name,
 )
 from scope.hooks.install import install_tmux_hooks
@@ -228,6 +230,8 @@ class ScopeApp(App):
             self.notify("Not running inside tmux", severity="error")
             return
 
+        current_pane_id = get_current_pane_id()
+
         # Detach any currently attached pane first
         if self._attached_pane_id:
             self.action_detach()
@@ -293,6 +297,11 @@ class ScopeApp(App):
                 set_pane_option(pane_id, "@scope_session_id", session_id)
             except TmuxError:
                 pass
+            if current_pane_id:
+                try:
+                    select_pane(current_pane_id)
+                except TmuxError:
+                    pass
         except TmuxError as e:
             self.notify(f"Failed to create session: {e}", severity="error")
 
@@ -302,6 +311,8 @@ class ScopeApp(App):
         if not in_tmux():
             self.notify("Not running inside tmux", severity="error")
             return
+
+        current_pane_id = get_current_pane_id()
 
         # Detach any currently attached pane first
         if self._attached_pane_id:
@@ -325,6 +336,11 @@ class ScopeApp(App):
                 set_pane_option(pane_id, "@scope_session_id", session_id)
             except TmuxError:
                 pass
+            if current_pane_id:
+                try:
+                    select_pane(current_pane_id)
+                except TmuxError:
+                    pass
         except TmuxError as e:
             self.notify(f"Failed to attach: {e}", severity="error")
 

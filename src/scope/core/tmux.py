@@ -434,6 +434,18 @@ def get_current_session() -> str | None:
     return None
 
 
+def get_current_pane_id() -> str | None:
+    """Get the pane ID for the current tmux pane."""
+    result = subprocess.run(
+        _tmux_cmd(["display-message", "-p", "#{pane_id}"]),
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode == 0:
+        return result.stdout.strip()
+    return None
+
+
 def pane_target_for_window(window_name: str) -> str:
     """Build a pane target for the first pane in a window."""
     current = get_current_session()
@@ -451,6 +463,17 @@ def set_pane_option(target: str, option: str, value: str) -> None:
     )
     if result.returncode != 0:
         raise TmuxError(f"Failed to set pane option: {result.stderr}")
+
+
+def select_pane(pane_id: str) -> None:
+    """Select a pane by ID in the current window."""
+    result = subprocess.run(
+        _tmux_cmd(["select-pane", "-t", pane_id]),
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise TmuxError(f"Failed to select pane: {result.stderr}")
 
 
 def split_window(
