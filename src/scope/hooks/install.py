@@ -254,7 +254,7 @@ def install_tmux_hooks() -> tuple[bool, str | None]:
     python_exec = shlex.quote(sys.executable)
     hook_cmd = (
         'run-shell "'
-        f'{python_exec} -m scope.hooks.handler pane-died '
+        f"{python_exec} -m scope.hooks.handler pane-died "
         '\\"#{window_name}\\" \\"#{pane_id}\\" \\"#{@scope_session_id}\\" '
         '\\"#{pane_current_path}\\""'
     )

@@ -2,7 +2,6 @@
 
 import asyncio
 import os
-import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -13,7 +12,6 @@ from textual.widgets import Button, DataTable, Footer, Header, Static
 from scope.core.session import Session
 from scope.core.state import (
     delete_session,
-    ensure_scope_dir,
     get_global_scope_base,
     get_root_path,
     load_all,
@@ -142,9 +140,7 @@ class ScopeApp(App):
         super().__init__()
         self._watcher_task: asyncio.Task | None = None
         self._dangerously_skip_permissions = dangerously_skip_permissions
-        self._detach_client_on_exit = (
-            os.environ.get("SCOPE_TUI_DETACH_ON_EXIT") == "1"
-        )
+        self._detach_client_on_exit = os.environ.get("SCOPE_TUI_DETACH_ON_EXIT") == "1"
         if not self._detach_client_on_exit and in_tmux():
             current = get_current_session()
             if current and current == get_scope_session():
@@ -236,7 +232,6 @@ class ScopeApp(App):
         if self._attached_pane_id:
             self.action_detach()
 
-        scope_dir = ensure_scope_dir()
         session_id = next_id("")
         window_name = tmux_window_name(session_id)
 
