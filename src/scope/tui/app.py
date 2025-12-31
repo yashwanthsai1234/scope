@@ -27,8 +27,11 @@ from scope.core.tmux import (
     has_window,
     in_tmux,
     kill_window,
+    pane_target_for_window,
+    set_pane_option,
     tmux_window_name,
 )
+from scope.hooks.install import install_tmux_hooks
 from scope.tui.widgets.session_tree import SessionTable
 
 
@@ -84,6 +87,10 @@ class ScopeApp(App):
         # Enable tmux mouse mode for pane switching
         if in_tmux():
             enable_mouse()
+        # Ensure tmux hooks are installed (they don't persist across server restarts)
+        success, error = install_tmux_hooks()
+        if not success:
+            self.notify(f"tmux hooks: {error}", severity="warning")
         self.refresh_sessions()
         self._watcher_task = asyncio.create_task(self._watch_sessions())
 
@@ -157,21 +164,14 @@ class ScopeApp(App):
         if self._attached_pane_id:
             self.action_detach()
 
-        ensure_scope_dir()
+        scope_dir = ensure_scope_dir()
         session_id = next_id("")
         window_name = tmux_window_name(session_id)
 
-        session = Session(
-            id=session_id,
-            task="",  # Will be inferred from first user message via hooks
-            parent="",
-            state="running",
-            tmux_session=window_name,  # Store window name (kept as tmux_session for compat)
-            created_at=datetime.now(timezone.utc),
-        )
-        save_session(session)
-
-        # Create tmux window with Claude Code
+        # Create tmux window with Claude Code BEFORE saving session
+        # This prevents a race where load_all() sees a "running" session
+        # with a tmux_session set but the window doesn't exist yet,
+        # causing it to be incorrectly marked as "aborted"
         try:
             command = "claude"
             if self._dangerously_skip_permissions:
@@ -188,10 +188,39 @@ class ScopeApp(App):
                 cwd=Path.cwd(),  # Project root
                 env=env,
             )
+
+            try:
+                set_pane_option(
+                    pane_target_for_window(window_name),
+                    "@scope_session_id",
+                    session_id,
+                )
+            except TmuxError:
+                pass
+
+            # Ensure tmux hook is installed AFTER create_window (so server exists)
+            # Idempotent - safe to call on every spawn
+            install_tmux_hooks()
+
+            # Now that window exists, save session to filesystem
+            session = Session(
+                id=session_id,
+                task="",  # Will be inferred from first user message via hooks
+                parent="",
+                state="running",
+                tmux_session=window_name,  # Store window name (kept as tmux_session for compat)
+                created_at=datetime.now(timezone.utc),
+            )
+            save_session(session)
+
             # Join the pane into current window
             pane_id = attach_in_split(window_name)
             self._attached_pane_id = pane_id
             self._attached_window_name = window_name
+            try:
+                set_pane_option(pane_id, "@scope_session_id", session_id)
+            except TmuxError:
+                pass
         except TmuxError as e:
             self.notify(f"Failed to create session: {e}", severity="error")
 
@@ -220,6 +249,10 @@ class ScopeApp(App):
             pane_id = attach_in_split(window_name)
             self._attached_pane_id = pane_id
             self._attached_window_name = window_name
+            try:
+                set_pane_option(pane_id, "@scope_session_id", session_id)
+            except TmuxError:
+                pass
         except TmuxError as e:
             self.notify(f"Failed to attach: {e}", severity="error")
 

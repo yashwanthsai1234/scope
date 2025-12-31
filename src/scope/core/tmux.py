@@ -343,6 +343,25 @@ def get_current_session() -> str | None:
     return None
 
 
+def pane_target_for_window(window_name: str) -> str:
+    """Build a pane target for the first pane in a window."""
+    current = get_current_session()
+    if current is None:
+        return f"{get_scope_session()}:{window_name}.0"
+    return f":{window_name}.0"
+
+
+def set_pane_option(target: str, option: str, value: str) -> None:
+    """Set a pane-local option."""
+    result = subprocess.run(
+        _tmux_cmd(["set-option", "-p", "-t", target, option, value]),
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise TmuxError(f"Failed to set pane option: {result.stderr}")
+
+
 def split_window(
     command: str,
     cwd: Path | None = None,

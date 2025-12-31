@@ -24,10 +24,10 @@ def _build_tree(
     """
     # Filter out done/aborted if requested
     if hide_done:
-        # Build set of IDs to hide (done/aborted sessions and their descendants)
+        # Build set of IDs to hide (done/aborted/exited sessions and their descendants)
         hidden_ids: set[str] = set()
         for s in sessions:
-            if s.state in {"done", "aborted"}:
+            if s.state in {"done", "aborted", "exited"}:
                 hidden_ids.add(s.id)
         # Also hide children of hidden sessions
         changed = True
