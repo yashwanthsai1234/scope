@@ -34,9 +34,9 @@ test-seq:
 # Run all checks (format, lint, test)
 check: format lint test
 
-# Run scope top
-top:
-    uv run scope top
+# Run scope TUI
+tui:
+    uv run scope
 
 # Clean build artifacts
 clean:

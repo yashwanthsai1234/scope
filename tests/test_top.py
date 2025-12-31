@@ -1,4 +1,4 @@
-"""Tests for scope top TUI."""
+"""Tests for scope TUI."""
 
 from datetime import datetime, timezone
 import pytest

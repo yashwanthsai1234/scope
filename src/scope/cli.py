@@ -15,7 +15,6 @@ from scope.commands.abort import abort
 from scope.commands.poll import poll
 from scope.commands.setup import setup
 from scope.commands.spawn import spawn
-from scope.commands.top import top
 from scope.commands.wait import wait
 from scope.core.tmux import (
     TmuxError,
@@ -110,13 +109,15 @@ def main(
         )
     else:
         # Already in tmux - run the TUI directly
-        ctx.invoke(top, dangerously_skip_permissions=dangerously_skip_permissions)
+        from scope.tui.app import ScopeApp
+
+        app = ScopeApp(dangerously_skip_permissions=dangerously_skip_permissions)
+        app.run()
 
 
 # Register commands
 main.add_command(spawn)
 main.add_command(poll)
-main.add_command(top)
 main.add_command(abort)
 main.add_command(setup)
 main.add_command(wait)

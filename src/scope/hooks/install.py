@@ -141,7 +141,7 @@ When in doubt, spawn. Your subagents have full Claude Code capabilities.
 The built-in Task and Explore tools are **opaque**. The user cannot see progress or intervene.
 
 Scope provides **transparency**:
-- User sees all sessions via `scope top`
+- User sees all sessions via `scope`
 - User can attach and interact directly
 - User can abort runaway tasks
 

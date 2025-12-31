@@ -199,7 +199,7 @@ def ensure_scope_session() -> None:
         return
 
     # Create a new detached session
-    # The initial window will be replaced or used for scope top
+    # The initial window will be replaced or used for the scope TUI
     cmd = _tmux_cmd(["new-session", "-d", "-s", session_name])
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
