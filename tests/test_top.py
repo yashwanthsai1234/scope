@@ -1,6 +1,7 @@
 """Tests for scope TUI."""
 
 from datetime import datetime, timezone
+from unittest.mock import patch
 import pytest
 
 from scope.core.session import Session
