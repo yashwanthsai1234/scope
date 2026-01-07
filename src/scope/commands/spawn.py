@@ -4,6 +4,7 @@ Creates a new scope session with Claude Code running in a tmux window.
 """
 
 import os
+import shlex
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -51,6 +52,16 @@ PENDING_TASK = "(pending...)"
     help="Comma-separated list of session IDs or aliases this session depends on",
 )
 @click.option(
+    "--plan",
+    is_flag=True,
+    help="Start Claude in plan mode",
+)
+@click.option(
+    "--model",
+    default="",
+    help="Model to use (e.g., sonnet, opus, haiku)",
+)
+@click.option(
     "--dangerously-skip-permissions",
     is_flag=True,
     envvar="SCOPE_DANGEROUSLY_SKIP_PERMISSIONS",
@@ -62,6 +73,8 @@ def spawn(
     prompt: str,
     alias: str,
     after: str,
+    plan: bool,
+    model: str,
     dangerously_skip_permissions: bool,
 ) -> None:
     """Spawn a new scope session.
@@ -136,13 +149,23 @@ def spawn(
     try:
         # Allow overriding command for tests (e.g., "sleep infinity" when claude isn't installed)
         command = os.environ.get("SCOPE_SPAWN_COMMAND", "claude")
-        if dangerously_skip_permissions and command == "claude":
-            command = "claude --dangerously-skip-permissions"
+        if command == "claude":
+            if plan:
+                command += " --permission-mode plan"
+            if model:
+                command += f" --model {shlex.quote(model)}"
+            if dangerously_skip_permissions:
+                command += " --dangerously-skip-permissions"
 
         # Build environment for spawned session
         env = {"SCOPE_SESSION_ID": session_id}
         if dangerously_skip_permissions:
             env["SCOPE_DANGEROUSLY_SKIP_PERMISSIONS"] = "1"
+        if path := os.environ.get("PATH"):
+            env["PATH"] = path
+        for key, value in os.environ.items():
+            if key.startswith(("CLAUDE", "ANTHROPIC")):
+                env[key] = value
 
         create_window(
             name=window_name,
