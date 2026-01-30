@@ -163,7 +163,7 @@ def summarize_task(prompt: str) -> str:
     Returns:
         A 3-5 word summary, or truncated first line as fallback
     """
-    import subprocess
+    from scope.core.summarize import summarize
 
     # Fallback: truncated first line
     first_line = prompt.split("\n")[0].strip()
@@ -172,36 +172,15 @@ def summarize_task(prompt: str) -> str:
     else:
         fallback = first_line
 
-    try:
-        # Use env to prevent hook recursion - unset SCOPE_SESSION_ID
-        # so the claude call doesn't trigger our hooks
-        env = os.environ.copy()
-        env.pop("SCOPE_SESSION_ID", None)
-
-        result = subprocess.run(
-            [
-                "claude",
-                "-p",
-                "You are a task title generator. Given a user request, output ONLY a 3-5 word title. "
-                "No explanation, no execution, no quotes, no punctuation. Just the title.\n\n"
-                f"User request: {prompt[:500]}\n\nTitle:",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=30,
-            env=env,
-        )
-
-        if result.returncode == 0 and result.stdout.strip():
-            summary = result.stdout.strip()
-            # Sanity check: should be short
-            if len(summary) <= 60:
-                return summary
-
-    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
-        pass
-
-    return fallback
+    return summarize(
+        f"User request: {prompt[:500]}\n\nTitle:",
+        goal=(
+            "You are a task title generator. Given a user request, output ONLY a 3-5 word title. "
+            "No explanation, no execution, no quotes, no punctuation. Just the title."
+        ),
+        max_length=60,
+        fallback=fallback,
+    )
 
 
 @main.command()
@@ -232,54 +211,14 @@ def task() -> None:
             # Task already set, don't overwrite
             return
 
+    # Skip slash commands and short uninformative prompts — wait for a
+    # substantive prompt (e.g. the contract) before inferring a task name.
+    stripped = prompt.strip()
+    if stripped.startswith("/") or len(stripped) < 20:
+        return
+
     summary = summarize_task(prompt)
     task_file.write_text(summary)
-
-
-@main.command("pattern-reinject")
-def pattern_reinject() -> None:
-    """Handle UserPromptSubmit hook - re-inject pattern state into agent context.
-
-    When an agent is committed to a pattern (TDD, RALPH, etc.), this hook
-    outputs the current pattern state to stderr after each prompt submission.
-    This ensures the agent stays aware of its pattern commitment even as
-    context grows.
-    """
-    session_dir = get_session_dir()
-    if session_dir is None:
-        return
-
-    state_file = session_dir / "pattern_state.json"
-    if not state_file.exists():
-        return
-
-    state = orjson.loads(state_file.read_bytes())
-    pattern = state.get("pattern", "")
-    if not pattern:
-        return
-
-    phases = state.get("phases", [])
-    completed = state.get("completed", [])
-    current = state.get("current", "")
-
-    # Build re-injection message
-    parts = [f"Pattern: {pattern}."]
-
-    if completed:
-        parts.append(f"Completed: {', '.join(completed)}.")
-
-    if current:
-        parts.append(f"Next: {current}.")
-    elif phases and len(completed) >= len(phases):
-        parts.append("All phases complete.")
-
-    if phases:
-        parts.append(f"Phases: {' → '.join(phases)}.")
-
-    parts.append("If you need to deviate from this pattern, state why explicitly.")
-
-    message = " ".join(parts)
-    click.echo(f"[pattern-state] {message}", err=True)
 
 
 def extract_final_response(transcript_path: str) -> str | None:
@@ -471,7 +410,7 @@ def copy_trajectory(transcript_path: str, session_dir: Path) -> bool:
 def extract_claude_session_id(transcript_path: str) -> str | None:
     """Extract the Claude sessionId from a transcript JSONL file.
 
-    The sessionId is used for `claude --resume <uuid>` to continue an evicted session.
+    The sessionId is used for `claude --resume <uuid>` to continue a session.
 
     Args:
         transcript_path: Path to the conversation transcript (.jsonl)
